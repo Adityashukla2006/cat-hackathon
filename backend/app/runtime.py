@@ -31,14 +31,20 @@ from app.schemas import (
 )
 
 
-def seed_demo_shift(db: Session, demo: dict[str, Any], timeline: ShadowTimeline | None) -> Shift:
-    """Create the demo operator, machines, and a fresh demo shift (replacing any earlier run)."""
+def seed_people(db: Session, demo: dict[str, Any]) -> None:
+    """Create the demo operator and machines if they don't exist yet."""
     op = demo["operator"]
     if db.get(Operator, op["id"]) is None:
         db.add(Operator(id=op["id"], name=op["name"], experience_years=op["experience_years"]))
     for m in demo["machines"]:
         if db.get(Machine, m["id"]) is None:
             db.add(Machine(id=m["id"], name=m["name"], model=m["model"], kind=m["kind"]))
+    db.flush()
+
+
+def seed_demo_shift(db: Session, demo: dict[str, Any], timeline: ShadowTimeline | None) -> Shift:
+    """Create the demo operator, machines, and a fresh demo shift (replacing any earlier run)."""
+    seed_people(db, demo)
     spec = demo["shift"]
     existing = db.get(Shift, spec["id"])
     if existing is not None:

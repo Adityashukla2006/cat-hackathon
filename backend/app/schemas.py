@@ -209,6 +209,57 @@ class GuideHitOut(BaseModel):
     score: float
 
 
+class GuideSectionOut(BaseModel):
+    heading: str
+    text: str
+
+
+class GuideOut(BaseModel):
+    id: str
+    title: str
+    sections: list[GuideSectionOut]
+
+
+class LessonSummary(BaseModel):
+    id: str
+    title: str
+    guide_id: str
+    practice: str | None
+    best_score: float | None
+    passed: bool
+
+
+class ModuleOut(BaseModel):
+    id: str
+    title: str
+    lessons: list[LessonSummary]
+
+
+class QuizQuestionOut(BaseModel):
+    question: str
+    options: list[str]
+
+
+class LessonOut(BaseModel):
+    id: str
+    title: str
+    guide_id: str
+    key_points: list[str]
+    practice: str | None
+    questions: list[QuizQuestionOut]
+
+
+class QuizSubmit(BaseModel):
+    operator_id: int
+    answers: list[int]
+
+
+class TrainingResultIn(BaseModel):
+    operator_id: int
+    activity_id: str = Field(pattern=r"^(sim|walkaround|drill):[a-z0-9_-]+$")
+    score: float = Field(ge=0, le=1)
+
+
 class ChatRequest(BaseModel):
     shift_id: int | None = None
     message: str = Field(min_length=1, max_length=2000)

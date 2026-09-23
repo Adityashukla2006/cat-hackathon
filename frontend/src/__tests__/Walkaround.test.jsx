@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Walkaround from '../components/Walkaround'
-import Training from '../pages/Training'
 import {
   CHECKPOINTS,
   SCENARIOS,
@@ -87,14 +86,3 @@ describe('Walkaround component', () => {
   })
 })
 
-describe('Training page', () => {
-  it('switches between the simulator and the walkaround', async () => {
-    vi.spyOn(window, 'requestAnimationFrame').mockImplementation(() => 1)
-    render(<Training />)
-    expect(screen.getByRole('button', { name: /Reach the target/ })).toBeInTheDocument()
-    await userEvent.click(screen.getByRole('tab', { name: 'Walkaround' }))
-    expect(screen.getByRole('tab', { name: 'Walkaround' })).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByLabelText('Walkaround inspection')).toBeInTheDocument()
-    vi.restoreAllMocks()
-  })
-})

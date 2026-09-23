@@ -23,12 +23,16 @@ from sqlalchemy.orm import Session
 
 from app.agents.assistant import answer as assistant_answer
 from app.agents.planner import PlanResult, plan_shift
+from app import training
+from app.guides import get_guides
+from app.runtime import seed_people
 from app.agents.scribe import transcribe, write_report
 from app.config import get_settings
 from app.db import (
     Alert,
     HazardPin,
     Incident,
+    Operator,
     Shift,
     get_engine,
     init_db,
@@ -43,6 +47,14 @@ from app.schemas import (
     ChatAnswer,
     ChatRequest,
     GuideHitOut,
+    GuideOut,
+    GuideSectionOut,
+    LessonOut,
+    LessonSummary,
+    ModuleOut,
+    QuizQuestionOut,
+    QuizSubmit,
+    TrainingResultIn,
     HazardPinOut,
     HealthOut,
     IncidentCreate,
@@ -104,6 +116,9 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         app.state.engine = engine or get_engine()
         init_db(app.state.engine)
         app.state.hub = ReplayHub(app.state.engine)
+        with suppress(DemoNotGeneratedError), make_session_factory(app.state.engine)() as db:
+            seed_people(db, get_demo())  # the demo operator can train before any replay
+            db.commit()
         yield
         await app.state.hub.shutdown()
 
@@ -192,6 +207,83 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         hub: ReplayHub = request.app.state.hub
         session = hub.runtime.session if hub.runtime is not None and hub.running else None
         return await asyncio.to_thread(assistant_answer, body.message, session, index)
+
+    @app.get("/guides/{guide_id}", response_model=GuideOut)
+    def read_guide(guide_id: str) -> GuideOut:
+        guide = next((g for g in get_guides() if g.id == guide_id), None)
+        if guide is None:
+            raise HTTPException(status_code=404, detail="guide not found")
+        return GuideOut(
+            id=guide.id,
+            title=guide.title,
+            sections=[GuideSectionOut(heading=s.heading, text=s.text) for s in guide.sections],
+        )
+
+    def _require_operator(db: Session, operator_id: int) -> None:
+        if db.get(Operator, operator_id) is None:
+            raise HTTPException(status_code=404, detail="operator not found")
+
+    @app.get("/training/modules", response_model=list[ModuleOut])
+    def training_modules(operator_id: int, db: Session = Depends(get_session)) -> list[ModuleOut]:
+        best = training.best_scores(db, operator_id)
+        return [
+            ModuleOut(
+                id=m.id,
+                title=m.title,
+                lessons=[
+                    LessonSummary(
+                        id=lesson.id,
+                        title=lesson.title,
+                        guide_id=lesson.guide_id,
+                        practice=lesson.practice,
+                        best_score=best.get(lesson.id),
+                        passed=best.get(lesson.id, 0.0) >= training.PASS_SCORE,
+                    )
+                    for lesson in m.lessons
+                ],
+            )
+            for m in training.CURRICULUM
+        ]
+
+    @app.get("/training/lessons/{lesson_id}", response_model=LessonOut)
+    def training_lesson(lesson_id: str) -> LessonOut:
+        lesson = training.LESSONS.get(lesson_id)
+        if lesson is None:
+            raise HTTPException(status_code=404, detail="lesson not found")
+        return LessonOut(
+            id=lesson.id,
+            title=lesson.title,
+            guide_id=lesson.guide_id,
+            key_points=lesson.key_points,
+            practice=lesson.practice,
+            questions=[
+                QuizQuestionOut(question=q.question, options=q.options) for q in lesson.quiz
+            ],
+        )
+
+    @app.post("/training/lessons/{lesson_id}/quiz", response_model=training.QuizResult)
+    def submit_quiz(
+        lesson_id: str, body: QuizSubmit, db: Session = Depends(get_session)
+    ) -> training.QuizResult:
+        lesson = training.LESSONS.get(lesson_id)
+        if lesson is None:
+            raise HTTPException(status_code=404, detail="lesson not found")
+        _require_operator(db, body.operator_id)
+        try:
+            result = training.grade(lesson, body.answers)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        training.record_result(db, body.operator_id, lesson.id, result.score)
+        return result
+
+    @app.post("/training/results", status_code=201)
+    def record_training_result(
+        body: TrainingResultIn, db: Session = Depends(get_session)
+    ) -> dict[str, str]:
+        """Simulator, walkaround, and drill scores (0-1) for the Coach to learn from."""
+        _require_operator(db, body.operator_id)
+        training.record_result(db, body.operator_id, body.activity_id, body.score)
+        return {"status": "recorded"}
 
     @app.get("/hazards", response_model=list[HazardPinOut])
     def list_hazards(request: Request, db: Session = Depends(get_session)) -> list[HazardPinOut]:

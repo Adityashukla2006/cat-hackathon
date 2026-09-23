@@ -1,5 +1,6 @@
 export const SITE_CENTER = [40.695, -89.589]
 export const OPERATOR_MACHINE_ID = 1
+export const OPERATOR_ID = 1
 
 export const MACHINES = {
   1: { name: 'EX-01', kind: 'Excavator', color: '#ffcd11' },

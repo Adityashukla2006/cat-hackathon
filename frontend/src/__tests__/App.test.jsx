@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
 
 vi.mock('../pages/Tablet', () => ({ default: () => <h1>Tablet</h1> }))
+vi.mock('../pages/Training', () => ({ default: () => <h1>Training</h1> }))
 
 describe('App shell', () => {
   it('renders the three page links', () => {
