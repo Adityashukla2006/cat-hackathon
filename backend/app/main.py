@@ -36,8 +36,10 @@ from app.db import (
 from app.llm import LLMError
 from app.hub import ReplayHub
 from app.replay import DEFAULT_SPEED, DemoNotGeneratedError, demo_context, get_demo
+from app.retrieval import GuideIndex, get_guide_index
 from app.schemas import (
     AlertOut,
+    GuideHitOut,
     HazardPinOut,
     HealthOut,
     IncidentCreate,
@@ -165,6 +167,19 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         alert.acknowledged = True
         db.commit()
         return AlertOut.model_validate(alert)
+
+    @app.get("/guides/search", response_model=list[GuideHitOut])
+    def search_guides(
+        q: str = Query(min_length=2, max_length=300),
+        k: int = Query(3, ge=1, le=10),
+        index: GuideIndex = Depends(get_guide_index),
+    ) -> list[GuideHitOut]:
+        return [
+            GuideHitOut(
+                guide_id=h.section.guide_id, source=h.source, text=h.section.text, score=h.score
+            )
+            for h in index.search(q, k=k)
+        ]
 
     @app.get("/hazards", response_model=list[HazardPinOut])
     def list_hazards(request: Request, db: Session = Depends(get_session)) -> list[HazardPinOut]:

@@ -202,6 +202,13 @@ class HazardPinOut(ORMModel):
     reported_by_machine_id: int | None = None
 
 
+class GuideHitOut(BaseModel):
+    guide_id: str
+    source: str
+    text: str
+    score: float
+
+
 class ChatRequest(BaseModel):
     shift_id: int | None = None
     message: str = Field(min_length=1, max_length=2000)

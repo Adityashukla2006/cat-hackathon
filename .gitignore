@@ -26,3 +26,4 @@ coverage/
 Thumbs.db
 .vscode/
 .idea/
+backend/guides/.cache/
