@@ -188,6 +188,13 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         )
         return [AlertOut.model_validate(r) for r in rows]
 
+    @app.get("/shifts/{shift_id}/incidents", response_model=list[IncidentOut])
+    def list_incidents(shift_id: int, db: Session = Depends(get_session)) -> list[IncidentOut]:
+        rows = db.scalars(
+            select(Incident).where(Incident.shift_id == shift_id).order_by(Incident.minute)
+        )
+        return [IncidentOut.model_validate(r) for r in rows]
+
     @app.post("/alerts/{alert_id}/ack", response_model=AlertOut)
     def acknowledge_alert(alert_id: int, db: Session = Depends(get_session)) -> AlertOut:
         alert = db.get(Alert, alert_id)

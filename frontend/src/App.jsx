@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes, useSearchParams } from 'react-router-dom'
+import Supervisor from './pages/Supervisor'
 import Tablet from './pages/Tablet'
 import Training from './pages/Training'
 
@@ -11,10 +12,6 @@ const links = [
 function TabletRoute() {
   const [params] = useSearchParams()
   return <Tablet machineId={Number(params.get('machine')) || 1} />
-}
-
-function Placeholder({ title }) {
-  return <h1 className="p-6 text-3xl font-bold">{title}</h1>
 }
 
 export default function App() {
@@ -39,7 +36,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<TabletRoute />} />
         <Route path="/training" element={<Training />} />
-        <Route path="/supervisor" element={<Placeholder title="Supervisor" />} />
+        <Route path="/supervisor" element={<Supervisor />} />
       </Routes>
     </div>
   )

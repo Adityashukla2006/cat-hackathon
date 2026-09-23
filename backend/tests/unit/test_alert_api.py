@@ -1,7 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import Alert, make_engine, make_session_factory
+from app.db import Alert, Incident, make_engine, make_session_factory
 from app.main import create_app
 from app.runtime import seed_demo_shift
 from data.generate import generate
@@ -38,3 +38,26 @@ def test_acknowledge_alert(client):
     assert response.status_code == 200 and response.json()["acknowledged"] is True
     assert client.get("/shifts/1/alerts").json()[0]["acknowledged"] is True
     assert client.post("/alerts/9999/ack").status_code == 404
+
+
+def test_list_incidents(client):
+    db = make_session_factory(client.app.state.engine)()
+    db.add(
+        Incident(
+            shift_id=1,
+            minute=200,
+            transcript="soft ground",
+            report={
+                "category": "ground",
+                "summary": "Soft ground at the ramp.",
+                "severity": "warning",
+                "hazard_kind": "soft_ground",
+                "actions_taken": [],
+            },
+        )
+    )
+    db.commit()
+    db.close()
+    body = client.get("/shifts/1/incidents").json()
+    assert [i["report"]["summary"] for i in body] == ["Soft ground at the ramp."]
+    assert client.get("/shifts/2/incidents").json() == []
