@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import AheadBehindBar from '../components/AheadBehindBar'
 import AlertBanner from '../components/AlertBanner'
 import BriefingCard from '../components/BriefingCard'
+import ChatWidget from '../components/ChatWidget'
 import ReplanCard from '../components/ReplanCard'
 import ShadowTimeline from '../components/ShadowTimeline'
 import SiteMap from '../components/SiteMap'
@@ -119,6 +120,10 @@ export default function Tablet({ machineId = OPERATOR_MACHINE_ID, createSocket, 
   }
 
   const timeline = reorderTimeline(plan?.timeline, order)
+  const alertActive = alerts.some((a) => !a.acknowledged && a.severity !== 'info')
+  const machineWorking = Boolean(
+    me?.engine_on && !me?.idle && (me.speed_kph > 0.5 || me.load_pct > 5),
+  )
 
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
@@ -208,6 +213,12 @@ export default function Tablet({ machineId = OPERATOR_MACHINE_ID, createSocket, 
           {status}
         </p>
       </div>
+
+      <ChatWidget
+        alertActive={alertActive}
+        machineWorking={machineWorking}
+        {...(startRecording ? { startRecording } : {})}
+      />
     </main>
   )
 }

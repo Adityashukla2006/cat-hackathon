@@ -28,7 +28,11 @@ const LABELS = {
 }
 
 /** Hold-to-talk incident report: records audio, transcribes it, hands back the text. */
-export default function VoiceButton({ onTranscript, startRecording = defaultRecorder }) {
+export default function VoiceButton({
+  onTranscript,
+  startRecording = defaultRecorder,
+  idleLabel = LABELS.idle,
+}) {
   const [state, setState] = useState('idle')
   const recorderRef = useRef(null)
 
@@ -69,7 +73,7 @@ export default function VoiceButton({ onTranscript, startRecording = defaultReco
         state === 'recording' ? 'bg-alert-red text-white' : 'bg-white text-black'
       }`}
     >
-      🎙 {LABELS[state]}
+      🎙 {state === 'idle' ? idleLabel : LABELS[state]}
     </button>
   )
 }
