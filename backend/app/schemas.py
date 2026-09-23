@@ -260,6 +260,29 @@ class TrainingResultIn(BaseModel):
     score: float = Field(ge=0, le=1)
 
 
+class DrillOut(BaseModel):
+    id: str
+    kind: str
+    minute: int
+    title: str
+    lesson_id: str
+    practice: str | None
+    scenario: str
+    question: str
+    options: list[str]
+
+
+class DrillAnswerIn(BaseModel):
+    operator_id: int
+    answer: int = Field(ge=0)
+
+
+class DrillResultOut(BaseModel):
+    correct: bool
+    correct_option: str
+    explanation: str
+
+
 class ChatRequest(BaseModel):
     shift_id: int | None = None
     message: str = Field(min_length=1, max_length=2000)

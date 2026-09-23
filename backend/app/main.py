@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.agents.assistant import answer as assistant_answer
+from app.agents.drills import Drill, drills_for_shift, shift_moments
 from app.agents.planner import PlanResult, plan_shift
 from app import training
 from app.guides import get_guides
@@ -46,6 +47,9 @@ from app.schemas import (
     AlertOut,
     ChatAnswer,
     ChatRequest,
+    DrillAnswerIn,
+    DrillOut,
+    DrillResultOut,
     GuideHitOut,
     GuideOut,
     GuideSectionOut,
@@ -116,6 +120,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         app.state.engine = engine or get_engine()
         init_db(app.state.engine)
         app.state.hub = ReplayHub(app.state.engine)
+        app.state.drills = {}
         with suppress(DemoNotGeneratedError), make_session_factory(app.state.engine)() as db:
             seed_people(db, get_demo())  # the demo operator can train before any replay
             db.commit()
@@ -284,6 +289,54 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         _require_operator(db, body.operator_id)
         training.record_result(db, body.operator_id, body.activity_id, body.score)
         return {"status": "recorded"}
+
+    def _drills(request: Request, db: Session, shift_id: int) -> dict[str, Drill]:
+        """Drills for a shift, regenerated only when the shift's moments change."""
+        key = (shift_id, tuple(shift_moments(db, shift_id)))
+        cache: dict = request.app.state.drills
+        if cache.get(shift_id, (None,))[0] != key:
+            cache[shift_id] = (key, {d.id: d for d in drills_for_shift(db, shift_id)})
+        return cache[shift_id][1]
+
+    @app.get("/shifts/{shift_id}/drills", response_model=list[DrillOut])
+    async def shift_drills(
+        shift_id: int, request: Request, db: Session = Depends(get_session)
+    ) -> list[DrillOut]:
+        drills = await asyncio.to_thread(_drills, request, db, shift_id)
+        return [
+            DrillOut(
+                id=d.id,
+                kind=d.kind,
+                minute=d.minute,
+                title=d.title,
+                lesson_id=d.lesson_id,
+                practice=d.practice,
+                scenario=d.content.scenario,
+                question=d.content.question,
+                options=d.content.options,
+            )
+            for d in drills.values()
+        ]
+
+    @app.post("/shifts/{shift_id}/drills/{drill_id}/answer", response_model=DrillResultOut)
+    def answer_drill(
+        shift_id: int,
+        drill_id: str,
+        body: DrillAnswerIn,
+        request: Request,
+        db: Session = Depends(get_session),
+    ) -> DrillResultOut:
+        drill = request.app.state.drills.get(shift_id, (None, {}))[1].get(drill_id)
+        if drill is None:
+            raise HTTPException(status_code=404, detail="drill not found; list drills first")
+        _require_operator(db, body.operator_id)
+        correct = body.answer == drill.content.answer
+        training.record_result(db, body.operator_id, f"drill:{drill.kind}", float(correct))
+        return DrillResultOut(
+            correct=correct,
+            correct_option=drill.content.options[drill.content.answer],
+            explanation=drill.content.explanation,
+        )
 
     @app.get("/hazards", response_model=list[HazardPinOut])
     def list_hazards(request: Request, db: Session = Depends(get_session)) -> list[HazardPinOut]:

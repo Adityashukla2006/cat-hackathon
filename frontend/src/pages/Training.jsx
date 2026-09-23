@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import LessonsHub from '../components/LessonsHub'
+import ShiftDrills from '../components/ShiftDrills'
 import SimTaskRunner from '../components/SimTaskRunner'
 import Walkaround from '../components/Walkaround'
 import { postJson } from '../lib/api'
@@ -7,6 +8,7 @@ import { OPERATOR_ID } from '../lib/site'
 
 const TABS = [
   { id: 'lessons', label: 'Lessons' },
+  { id: 'drills', label: 'From your shift' },
   { id: 'simulator', label: 'Joystick simulator' },
   { id: 'walkaround', label: 'Walkaround' },
 ]
@@ -43,6 +45,7 @@ export default function Training() {
         ))}
       </div>
       {tab === 'lessons' && <LessonsHub onPractice={practice} />}
+      {tab === 'drills' && <ShiftDrills onPractice={practice} />}
       {tab === 'simulator' && (
         <>
           <p className="text-lg text-neutral-300">
