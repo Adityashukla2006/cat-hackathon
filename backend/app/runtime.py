@@ -146,6 +146,7 @@ class ShiftRuntime:
             self.refresh_pins()
         for frame in frames:
             self.session.latest[frame.machine_id] = frame
+        self._track_task(minute)
         state = run_event(
             self.graph, self.session, {"kind": "telemetry", "minute": minute, "frames": frames}
         )
@@ -154,6 +155,21 @@ class ShiftRuntime:
         if note is not None:
             messages += self.voice_note(minute, transcript=note["transcript"])
         return messages
+
+    def _track_task(self, minute: int) -> None:
+        """Mark tasks active/done in the database as the operator moves through them."""
+        me = self.session.me
+        seq = me.task_seq if me and me.minute == minute else None
+        current = self.session.memory.get("task_started")
+        if seq is None or (current and current[0] == seq):
+            return
+        tasks = {t.seq: t for t in self.db.get(Shift, self.session.shift_id).tasks}
+        if current:
+            done = tasks[current[0]]
+            done.status, done.actual_min = "done", float(minute - current[1])
+        tasks[seq].status = "active"
+        self.session.memory["task_started"] = (seq, minute)
+        self.db.commit()
 
     def voice_note(
         self,

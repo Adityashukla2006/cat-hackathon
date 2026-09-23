@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import HandoverPanel from '../components/HandoverPanel'
 import SiteMap from '../components/SiteMap'
 import { describeDelta } from '../components/AheadBehindBar'
 import { getJson, postJson } from '../lib/api'
@@ -139,6 +140,7 @@ export default function Supervisor({ createSocket }) {
       </div>
 
       <aside className="flex flex-col gap-4">
+        <HandoverPanel shiftId={SHIFT_ID} />
         <section aria-label="Alerts" className="rounded-2xl bg-neutral-900 p-4">
           <h2 className="text-2xl font-black">Alerts ({openAlerts} open)</h2>
           <ul className="mt-2 max-h-72 space-y-2 overflow-y-auto">

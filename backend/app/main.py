@@ -25,6 +25,7 @@ from sqlalchemy.orm import Session
 from app.agents.assistant import answer as assistant_answer
 from app.agents.coach import CoachAdvice, advise
 from app.agents.drills import Drill, drills_for_shift, shift_moments
+from app.agents.handover import Handover, build_handover
 from app.agents.planner import PlanResult, plan_shift
 from app import booking, training
 from app.guides import get_guides
@@ -194,6 +195,19 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             select(Incident).where(Incident.shift_id == shift_id).order_by(Incident.minute)
         )
         return [IncidentOut.model_validate(r) for r in rows]
+
+    @app.get("/shifts/{shift_id}/handover", response_model=Handover)
+    async def shift_handover(
+        shift_id: int, request: Request, db: Session = Depends(get_session)
+    ) -> Handover:
+        """End-of-shift handover. Uses the live (or just-finished) replay when it's this shift."""
+        hub: ReplayHub = request.app.state.hub
+        runtime = hub.runtime
+        session = runtime.session if runtime and runtime.session.shift_id == shift_id else None
+        try:
+            return await asyncio.to_thread(build_handover, db, shift_id, hub.site_now(), session)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     @app.post("/alerts/{alert_id}/ack", response_model=AlertOut)
     def acknowledge_alert(alert_id: int, db: Session = Depends(get_session)) -> AlertOut:

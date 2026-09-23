@@ -52,8 +52,8 @@ class ReplayHub:
         self._broadcast(messages)
 
     def site_now(self) -> datetime:
-        """The live shift's clock while a replay runs, otherwise wall-clock time."""
-        if self.runtime is not None and self.running and self.runtime.session.now is not None:
+        """The latest replay's clock (it stays at the end of a finished replay), else wall clock."""
+        if self.runtime is not None and self.runtime.session.now is not None:
             return self.runtime.session.now
         return datetime.now(timezone.utc)
 
