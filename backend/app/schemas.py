@@ -174,6 +174,10 @@ class IncidentCreate(BaseModel):
     lon: float | None = None
 
 
+class TranscriptOut(BaseModel):
+    transcript: str
+
+
 class IncidentOut(ORMModel):
     id: int
     shift_id: int

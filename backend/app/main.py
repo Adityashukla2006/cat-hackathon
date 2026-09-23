@@ -1,18 +1,31 @@
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, suppress
 from typing import Any
 
-from fastapi import Depends, FastAPI, Query, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 
 from app.agents.planner import PlanResult, plan_shift
+from app.agents.scribe import transcribe, write_report
 from app.config import get_settings
-from app.db import get_engine, init_db, make_session_factory
+from app.db import Incident, Shift, get_engine, init_db, make_session_factory
+from app.llm import LLMError
 from app.runtime import ShiftRuntime
 from app.replay import (
     DEFAULT_SPEED,
@@ -24,8 +37,11 @@ from app.replay import (
 )
 from app.schemas import (
     HealthOut,
+    IncidentCreate,
+    IncidentOut,
     ShadowTimeline,
     ShiftContext,
+    TranscriptOut,
     WsReplayStatus,
 )
 from app.shadow.predictor import ModelsNotTrainedError, ShadowPredictor, get_predictor
@@ -39,13 +55,30 @@ def get_demo_timeline(demo: dict[str, Any] = Depends(get_demo)) -> ShadowTimelin
         return None
 
 
-async def _receive_controls(ws: WebSocket, replay: ReplayEngine) -> None:
+def get_session(request: Request) -> Iterator[Session]:
+    session = make_session_factory(request.app.state.engine)()
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+async def _receive_controls(
+    ws: WebSocket,
+    replay: ReplayEngine,
+    on_voice_note: Callable[[dict[str, Any]], Awaitable[None]],
+) -> None:
+    """Client messages: {"action": "pause" | "resume" | "stop"} or
+    {"action": "voice_note", "transcript": "..."}."""
     actions = {"pause": replay.pause, "resume": replay.resume, "stop": replay.stop}
     try:
         while True:
             message = await ws.receive_json()
-            action = actions.get(message.get("action")) if isinstance(message, dict) else None
-            if action:
+            if not isinstance(message, dict):
+                continue
+            if message.get("action") == "voice_note" and message.get("transcript"):
+                await on_voice_note(message)
+            elif action := actions.get(message.get("action")):
                 action()
     except WebSocketDisconnect:
         replay.stop()
@@ -108,6 +141,35 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             request.app.state.demo_plan = plan_shift(ctx, shadow.predict(ctx))
         return request.app.state.demo_plan
 
+    @app.post("/transcribe", response_model=TranscriptOut)
+    async def transcribe_audio(audio: UploadFile = File(...)) -> TranscriptOut:
+        data = await audio.read()
+        if not data:
+            raise HTTPException(status_code=400, detail="empty audio")
+        try:
+            text_ = await asyncio.to_thread(transcribe, data, audio.filename or "note.webm")
+        except LLMError as exc:
+            raise HTTPException(status_code=502, detail="transcription unavailable") from exc
+        return TranscriptOut(transcript=text_)
+
+    @app.post("/incidents", response_model=IncidentOut, status_code=201)
+    def create_incident(body: IncidentCreate, db: Session = Depends(get_session)) -> IncidentOut:
+        """Log an incident outside a live replay (the live path goes through the WebSocket)."""
+        if db.get(Shift, body.shift_id) is None:
+            raise HTTPException(status_code=404, detail="shift not found")
+        report, _ = write_report(body.transcript)
+        row = Incident(
+            shift_id=body.shift_id,
+            minute=body.minute,
+            transcript=body.transcript,
+            report=report.model_dump(mode="json"),
+            lat=body.lat,
+            lon=body.lon,
+        )
+        db.add(row)
+        db.commit()
+        return IncidentOut.model_validate(row)
+
     @app.websocket("/ws/telemetry")
     async def telemetry_ws(
         ws: WebSocket,
@@ -119,19 +181,29 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         """Stream the demo shift through the agents: telemetry frames, the operator's
         ahead/behind delta, alerts, and replans.
 
-        Clients may send {"action": "pause" | "resume" | "stop"}.
+        Clients may send {"action": "pause" | "resume" | "stop"} or a voice note transcript
+        {"action": "voice_note", "transcript": "..."} (audio goes through POST /transcribe).
         """
         await ws.accept()
         replay = ReplayEngine(demo_frames(demo), speed=speed)
         db = make_session_factory(ws.app.state.engine)()
         runtime = await asyncio.to_thread(ShiftRuntime, db, demo, timeline)
-        controls = asyncio.create_task(_receive_controls(ws, replay))
+        lock = asyncio.Lock()  # one agent step at a time: minutes and voice notes share state
+
+        async def run(fn: Callable[..., list], *args: Any, **kwargs: Any) -> None:
+            async with lock:
+                messages = await asyncio.to_thread(fn, *args, **kwargs)
+                for message in messages:
+                    await ws.send_text(message.model_dump_json())
+
+        async def on_voice_note(message: dict[str, Any]) -> None:
+            await run(runtime.voice_note, runtime.session.minute, transcript=message["transcript"])
+
+        controls = asyncio.create_task(_receive_controls(ws, replay, on_voice_note))
         try:
             await ws.send_text(WsReplayStatus(state="started", minute=start).model_dump_json())
             async for minute, frames in replay.run(start_minute=start):
-                messages = await asyncio.to_thread(runtime.process_minute, minute, frames)
-                for message in messages:
-                    await ws.send_text(message.model_dump_json())
+                await run(runtime.process_minute, minute, frames)
             final = replay.minute if replay.minute is not None else start
             await ws.send_text(WsReplayStatus(state="finished", minute=final).model_dump_json())
             await ws.close()

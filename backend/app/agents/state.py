@@ -72,3 +72,4 @@ class GraphState(TypedDict, total=False):
     replan: Replan | None
     briefing: Briefing | None
     incident: IncidentReport | None
+    transcript: str | None

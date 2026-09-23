@@ -67,6 +67,7 @@ def run_event(graph: Any, session: ShiftSession, event: ShiftEvent) -> GraphStat
             "replan": None,
             "briefing": None,
             "incident": None,
+            "transcript": None,
         }
     )
 
@@ -75,6 +76,12 @@ def default_graph():
     """The graph wired with the real agents."""
     from app.agents.dispatcher import dispatcher_node
     from app.agents.planner import planner_node
+    from app.agents.scribe import scribe_node
     from app.agents.sentinel import sentinel_node
 
-    return build_graph(planner=planner_node, sentinel=sentinel_node, dispatcher=dispatcher_node)
+    return build_graph(
+        planner=planner_node,
+        sentinel=sentinel_node,
+        dispatcher=dispatcher_node,
+        scribe=scribe_node,
+    )

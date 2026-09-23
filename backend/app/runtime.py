@@ -10,15 +10,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.state import AlertDraft, GraphState, ShiftSession
-from app.db import Alert, Machine, Operator, Shift, ShiftTask
+from app.db import Alert, Incident, Machine, Operator, Shift, ShiftTask
 from app.graph import default_graph, run_event
 from app.replay import demo_context
 from app.schemas import (
     AlertOut,
+    IncidentOut,
     ShadowTimeline,
     TelemetryFrame,
     WsAlert,
     WsFatigue,
+    WsIncidentLogged,
     WsReplan,
     WsShadowDelta,
     WsTelemetry,
@@ -83,6 +85,9 @@ class ShiftRuntime:
             context=demo_context(demo),
             timeline=timeline,
         )
+        # the demo operator's scripted voice note, spoken at its scripted minute
+        incident = demo.get("incident")
+        self.scripted_notes = {incident["minute"]: incident} if incident else {}
 
     def _store_alert(self, draft: AlertDraft) -> AlertOut:
         row = Alert(
@@ -116,4 +121,35 @@ class ShiftRuntime:
         state = run_event(
             self.graph, self.session, {"kind": "telemetry", "minute": minute, "frames": frames}
         )
-        return [WsTelemetry(frame=f) for f in frames] + self._outputs(minute, state)
+        messages = [WsTelemetry(frame=f) for f in frames] + self._outputs(minute, state)
+        note = self.scripted_notes.get(minute)
+        if note is not None:
+            messages += self.voice_note(minute, transcript=note["transcript"])
+        return messages
+
+    def voice_note(
+        self,
+        minute: int,
+        transcript: str | None = None,
+        audio: bytes | None = None,
+        lat: float | None = None,
+        lon: float | None = None,
+    ) -> list[BaseModel]:
+        """Run a voice note through the Scribe and store the incident at the machine's spot."""
+        me = self.session.me
+        state = run_event(
+            self.graph,
+            self.session,
+            {"kind": "voice_note", "minute": minute, "transcript": transcript, "audio": audio},
+        )
+        row = Incident(
+            shift_id=self.session.shift_id,
+            minute=minute,
+            transcript=state["transcript"],
+            report=state["incident"].model_dump(mode="json"),
+            lat=lat if lat is not None else (me.lat if me else None),
+            lon=lon if lon is not None else (me.lon if me else None),
+        )
+        self.db.add(row)
+        self.db.commit()
+        return [WsIncidentLogged(incident=IncidentOut.model_validate(row))]
