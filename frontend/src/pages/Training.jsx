@@ -1,4 +1,4 @@
-import JoystickSim from '../components/JoystickSim'
+import SimTaskRunner from '../components/SimTaskRunner'
 
 export default function Training() {
   return (
@@ -8,7 +8,7 @@ export default function Training() {
       <p className="text-lg text-neutral-300">
         ISO pattern. Left stick: stick in/out and swing. Right stick: boom up/down and bucket.
       </p>
-      <JoystickSim />
+      <SimTaskRunner />
     </main>
   )
 }

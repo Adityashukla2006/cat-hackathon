@@ -14,12 +14,18 @@ const MAX_DT = 0.1
 
 const toSvg = (p) => ({ x: p.x - VIEW.minX, y: VIEW.maxY - p.y })
 
-/** 2D excavator arm driven by two ISO-pattern joysticks. */
-export default function JoystickSim({ initialState = INITIAL_STATE, onStateChange }) {
+/**
+ * 2D excavator arm driven by two ISO-pattern joysticks.
+ * `onTick(state, dt, controls)` fires every frame; `overlay(toSvg)` draws task markers.
+ */
+export default function JoystickSim({ initialState = INITIAL_STATE, onStateChange, onTick, overlay }) {
   const [state, setState] = useState(initialState)
+  const stateRef = useRef(initialState)
   const leversRef = useRef({ left: { x: 0, y: 0 }, right: { x: 0, y: 0 } })
   const onStateChangeRef = useRef(onStateChange)
   onStateChangeRef.current = onStateChange
+  const onTickRef = useRef(onTick)
+  onTickRef.current = onTick
 
   useEffect(() => {
     let frame
@@ -28,13 +34,14 @@ export default function JoystickSim({ initialState = INITIAL_STATE, onStateChang
       const dt = last === null ? 0 : Math.min((now - last) / 1000, MAX_DT)
       last = now
       const { left, right } = leversRef.current
+      const controls = mapIsoControls(left, right)
       if (dt > 0 && (left.x || left.y || right.x || right.y)) {
-        setState((prev) => {
-          const next = applyControls(prev, mapIsoControls(left, right), dt)
-          onStateChangeRef.current?.(next)
-          return next
-        })
+        const next = applyControls(stateRef.current, controls, dt)
+        stateRef.current = next
+        setState(next)
+        onStateChangeRef.current?.(next)
       }
+      if (dt > 0) onTickRef.current?.(stateRef.current, dt, controls)
       frame = requestAnimationFrame(tick)
     }
     frame = requestAnimationFrame(tick)
@@ -56,6 +63,7 @@ export default function JoystickSim({ initialState = INITIAL_STATE, onStateChang
       >
         <rect x={0} y={ground} width={VIEW.width} height={VIEW.height - ground} fill="#5b4636" />
         <rect x={toSvg({ x: -1.8, y: 0 }).x} y={ground - 1.8} width={3} height={1.8} fill="#ffcd11" />
+        {overlay?.(toSvg)}
         <polyline
           data-testid="arm"
           points={pts.map((p) => `${p.x},${p.y}`).join(' ')}
