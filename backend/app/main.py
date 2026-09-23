@@ -138,6 +138,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
+        allow_origin_regex=settings.frontend_origin_regex,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -488,7 +489,14 @@ def create_app(engine: Engine | None = None) -> FastAPI:
 
         Clients may send {"action": "pause" | "resume" | "stop"} or a voice note transcript
         {"action": "voice_note", "transcript": "..."} (audio goes through POST /transcribe).
+
+        CORS does not cover WebSockets, so browser origins are checked here. Clients that
+        send no Origin (scripts, tests) are let through.
         """
+        origin = ws.headers.get("origin")
+        if origin is not None and not settings.origin_allowed(origin):
+            await ws.close(code=1008)
+            return
         await ws.accept()
         hub: ReplayHub = ws.app.state.hub
         queue = hub.subscribe()
