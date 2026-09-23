@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4o-mini"
-    database_url: str = "postgresql+psycopg://shadow:shadow@localhost:5432/shadow_shift"
+    database_url: str = "postgresql+psycopg://shadow:shadow@localhost:5433/shadow_shift"
     frontend_origin: str = "http://localhost:5173"
 
     @property
