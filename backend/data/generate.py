@@ -22,6 +22,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.geo import offset  # noqa: E402
+from app.shadow.features import GROUNDS, TASK_TYPES  # noqa: E402
 
 SITE_CENTER = (40.6950, -89.5890)
 # zone name -> (north_m, east_m) from the site center
@@ -34,12 +35,12 @@ ZONES: dict[str, tuple[float, float]] = {
     "yard": (250.0, 250.0),
 }
 
-TASK_TYPES = ["dig", "load_truck", "trench", "grade", "stockpile"]
+
 BASE_MIN = {"dig": 45.0, "load_truck": 40.0, "trench": 55.0, "grade": 50.0, "stockpile": 50.0}
 FUEL_LPH = {"dig": 22.0, "load_truck": 20.0, "trench": 18.0, "grade": 16.0, "stockpile": 19.0}
 LOAD_PCT = {"dig": 75.0, "load_truck": 65.0, "trench": 60.0, "grade": 45.0, "stockpile": 55.0}
 IDLE_FUEL_LPH = 4.0
-GROUNDS = ["dry", "wet", "muddy"]
+
 GROUND_FACTOR = {"dry": 1.0, "wet": 1.12, "muddy": 1.3}
 MACHINE_FACTOR = {"excavator": 1.0, "wheel_loader": 0.9}
 

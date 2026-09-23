@@ -13,8 +13,7 @@ __pycache__/
 
 # data and models
 backend/data/generated/
-backend/ml/models/*.txt
-backend/ml/models/*.pkl
+backend/ml/models/
 *.db
 
 # node
