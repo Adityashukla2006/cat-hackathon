@@ -262,6 +262,13 @@ class WsIncidentLogged(BaseModel):
     incident: IncidentOut
 
 
+class WsFatigue(BaseModel):
+    type: Literal["fatigue"] = "fatigue"
+    minute: int
+    score: float = Field(ge=0, le=1)
+    factors: dict[str, float]
+
+
 class WsReplayStatus(BaseModel):
     type: Literal["replay_status"] = "replay_status"
     state: Literal["started", "paused", "finished"]
@@ -275,6 +282,7 @@ WsMessage = Annotated[
     | WsReplan
     | WsHazardWarning
     | WsIncidentLogged
+    | WsFatigue
     | WsReplayStatus,
     Field(discriminator="type"),
 ]

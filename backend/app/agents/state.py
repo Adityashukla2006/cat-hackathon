@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypedDict
 
+from app.agents.fatigue import FatigueReading
 from app.schemas import (
     AlertKind,
     Briefing,
@@ -65,6 +66,7 @@ class GraphState(TypedDict, total=False):
     event: ShiftEvent
     alerts: list[AlertDraft]
     delta_min: float | None
+    fatigue: FatigueReading | None
     needs_replan: bool
     replan_reason: str | None
     replan: Replan | None

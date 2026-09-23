@@ -5,6 +5,7 @@ Rules run on every telemetry minute for the operator's own machine:
   idle_deviation  a long idle streak, or idle in a task well beyond the shadow's expectation
   cycle_deviation falling well behind the shadow timeline
   fuel_deviation  burning well above the shadow's expected fuel rate
+  fatigue         the fatigue score (app/agents/fatigue.py) climbs past its alert level
 Deviations that change the plan ask the Dispatcher for a replan, with a cooldown.
 """
 
@@ -14,6 +15,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.agents.fatigue import FatigueReading, FatigueTracker
 from app.agents.state import AlertDraft, GraphState, ShiftSession
 from app.schemas import AlertKind, Severity, ShadowTask, TelemetryFrame
 from app.shadow.tracker import ShadowTracker
@@ -37,6 +39,7 @@ class SentinelState:
     fuel_window: deque[float] = field(default_factory=lambda: deque(maxlen=FUEL_WINDOW_MIN))
     fuel_alerted_tasks: set[int] = field(default_factory=set)
     last_replan_minute: int | None = None
+    fatigue: FatigueTracker = field(default_factory=FatigueTracker)
 
 
 def get_state(session: ShiftSession) -> SentinelState:
@@ -132,6 +135,18 @@ def check_fuel(
     )
 
 
+def check_fatigue(st: SentinelState, reading: FatigueReading) -> AlertDraft | None:
+    if not st.fatigue.should_alert(reading):
+        return None
+    reasons = " and ".join(reading.top_reasons()) or "time on shift"
+    return AlertDraft(
+        reading.minute,
+        AlertKind.fatigue,
+        Severity.warning,
+        f"Fatigue is building ({reasons}). Park safely and take a 10-minute break.",
+    )
+
+
 def _task(session: ShiftSession, seq: int | None) -> ShadowTask | None:
     if session.timeline is None or seq is None:
         return None
@@ -146,6 +161,7 @@ def sentinel_node(state: GraphState) -> dict[str, Any]:
     st = get_state(session)
     task = _task(session, frame.task_seq)
     delta = st.tracker.update(frame) if st.tracker else None
+    fatigue = st.fatigue.update(frame)
 
     alerts = [
         a
@@ -154,6 +170,7 @@ def sentinel_node(state: GraphState) -> dict[str, Any]:
             check_idle(st, frame, task),
             check_behind(st, frame.minute, delta),
             check_fuel(st, frame, task),
+            check_fatigue(st, fatigue),
         )
         if a is not None
     ]
@@ -169,6 +186,7 @@ def sentinel_node(state: GraphState) -> dict[str, Any]:
     return {
         "alerts": alerts,
         "delta_min": delta,
+        "fatigue": fatigue,
         "needs_replan": needs_replan,
         "replan_reason": triggers[0].message if needs_replan else None,
     }

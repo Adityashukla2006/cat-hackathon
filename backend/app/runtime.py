@@ -18,6 +18,7 @@ from app.schemas import (
     ShadowTimeline,
     TelemetryFrame,
     WsAlert,
+    WsFatigue,
     WsReplan,
     WsShadowDelta,
     WsTelemetry,
@@ -99,6 +100,9 @@ class ShiftRuntime:
         messages: list[BaseModel] = []
         if state.get("delta_min") is not None:
             messages.append(WsShadowDelta(minute=minute, delta_min=state["delta_min"]))
+        if state.get("fatigue") is not None:
+            reading = state["fatigue"]
+            messages.append(WsFatigue(minute=minute, score=reading.score, factors=reading.factors))
         messages.extend(WsAlert(alert=self._store_alert(a)) for a in state.get("alerts", []))
         if state.get("replan") is not None:
             messages.append(WsReplan(minute=minute, replan=state["replan"]))
