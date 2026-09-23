@@ -6,9 +6,13 @@ Agents call `get_llm()` and use `structured()` for anything they parse. Tests sw
 
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Protocol, TypeVar
 
 import openai
@@ -143,13 +147,70 @@ def _hash_embedding(text: str, dim: int) -> list[float]:
     return [v / norm for v in vec]
 
 
+class CachedLLM:
+    """Read-through cache of structured outputs, keyed by schema and exact prompt.
+
+    The demo shift is deterministic, so its briefing, replan note, incident report, and drills
+    hit the same prompts every run. A recorded cache replays them without an API call; anything
+    else falls through to `inner`. With `record=True` misses are saved back to `path`.
+    """
+
+    def __init__(self, inner: LLMClient, path: Path, record: bool = False) -> None:
+        self.inner = inner
+        self.path = Path(path)
+        self.record = record
+        self._lock = threading.Lock()
+        self.entries: dict[str, dict[str, Any]] = (
+            json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        )
+
+    @staticmethod
+    def key(system: str, user: str, schema: type[BaseModel]) -> str:
+        raw = json.dumps([schema.__name__, system, user], ensure_ascii=False)
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    def structured(self, system: str, user: str, schema: type[T]) -> T:
+        key = self.key(system, user, schema)
+        entry = self.entries.get(key)
+        if entry is not None and entry["schema"] == schema.__name__:
+            with _sdk_errors():
+                return schema.model_validate(entry["output"])
+        result = self.inner.structured(system, user, schema)
+        if self.record:
+            with self._lock:
+                self.entries[key] = {
+                    "schema": schema.__name__,
+                    "output": result.model_dump(mode="json"),
+                }
+                self.path.parent.mkdir(parents=True, exist_ok=True)
+                self.path.write_text(
+                    json.dumps(self.entries, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+                )
+        return result
+
+    def transcribe(self, audio: bytes, filename: str = "note.webm") -> str:
+        return self.inner.transcribe(audio, filename)
+
+    def embed(self, texts: list[str]) -> list[list[float]]:
+        return self.inner.embed(texts)
+
+
+def build_llm() -> LLMClient:
+    """The real client, behind the demo cache unless LLM_CACHE=off."""
+    settings = get_settings()
+    client: LLMClient = OpenAILLM()
+    if settings.llm_cache == "off":
+        return client
+    return CachedLLM(client, settings.llm_cache_path, record=settings.llm_cache == "record")
+
+
 _llm: LLMClient | None = None
 
 
 def get_llm() -> LLMClient:
     global _llm
     if _llm is None:
-        _llm = OpenAILLM()
+        _llm = build_llm()
     return _llm
 
 

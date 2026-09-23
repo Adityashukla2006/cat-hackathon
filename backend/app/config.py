@@ -1,8 +1,12 @@
 import re
 from functools import lru_cache
+from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+DEFAULT_LLM_CACHE = Path(__file__).resolve().parents[1] / "data" / "llm_cache.json"
 
 
 class Settings(BaseSettings):
@@ -16,6 +20,9 @@ class Settings(BaseSettings):
     frontend_origin: str = "http://localhost:5173"
     # optional, e.g. Vercel preview deploys: https://shadow-shift-.*\.vercel\.app
     frontend_origin_regex: str | None = None
+    # recorded demo LLM outputs: "read" replays them, "record" also saves misses, "off" skips
+    llm_cache: Literal["off", "read", "record"] = "read"
+    llm_cache_path: Path = DEFAULT_LLM_CACHE
 
     @field_validator("database_url")
     @classmethod
