@@ -72,7 +72,7 @@ DEMO_SCRIPT: dict[str, Any] = {
     ),
     "second_machine_approach": [250, 259],  # WL-02 drives towards the ramp
     "second_machine_at_hazard": [260, 275],
-    "fatigue_from_minute": 400,
+    "fatigue_from_minute": 420,
 }
 
 DEMO_WEATHER = {"temp_c": 14.0, "rain_mm": 4.0, "wind_kph": 18.0, "ground": "wet"}
@@ -82,10 +82,13 @@ DEMO_TASKS: list[tuple[int, str, str, str, float]] = [
     (1, "dig", "Dig pit face A", "pit", 0.97),
     (2, "load_truck", "Load haul trucks at the pit", "pit", 1.0),
     (3, "trench", "Cut drainage ditch along the haul ramp", "ramp", 1.0),
-    (4, "load_truck", "Load haul trucks at the pit", "pit", 1.02),
+    (4, "load_truck", "Load haul trucks at the pit", "pit", 1.0),  # runs to shift end
     (5, "grade", "Grade the yard pad", "yard", 1.0),
-    (6, "stockpile", "Build stockpile from pit spoil", "stockpile", 1.0),  # runs to shift end
+    (6, "stockpile", "Build stockpile from pit spoil", "stockpile", 1.02),
 ]
+# The operator follows the Dispatcher's replan after the idle window: riskier tasks 6 and 5
+# move ahead of the truck loading. Integration tests check the Dispatcher recommends this.
+DEMO_EXECUTION_ORDER = [1, 2, 3, 6, 5, 4]
 DEMO_FIRST_TASK_MINUTE = 7
 
 
@@ -117,19 +120,21 @@ def expected_duration(
     )
 
 
-def demo_schedule() -> list[tuple[int, int]]:
-    """(start_minute, minutes) per demo task.
+def demo_schedule() -> dict[int, tuple[int, int]]:
+    """seq -> (start_minute, minutes) for each demo task, in execution order.
 
     Tasks run at their scripted pace against the ground-truth duration for the demo operator.
     Task 3 also contains the unplanned idle window, and the last task runs on to the shift end
     because fatigue slows it down.
     """
     op = OPERATORS[0]
+    tasks = {t[0]: t for t in DEMO_TASKS}
     idle_lo, idle_hi = DEMO_SCRIPT["idle_window"]
-    schedule: list[tuple[int, int]] = []
+    schedule: dict[int, tuple[int, int]] = {}
     clock = DEMO_FIRST_TASK_MINUTE
-    for i, (seq, task_type, _desc, _zone, pace) in enumerate(DEMO_TASKS):
-        if i == len(DEMO_TASKS) - 1:
+    for i, seq in enumerate(DEMO_EXECUTION_ORDER):
+        _, task_type, _desc, _zone, pace = tasks[seq]
+        if i == len(DEMO_EXECUTION_ORDER) - 1:
             minutes = SHIFT_MINUTES - clock
         else:
             truth = expected_duration(
@@ -144,7 +149,7 @@ def demo_schedule() -> list[tuple[int, int]]:
             minutes = round(truth * pace)
             if seq == 3:
                 minutes += idle_hi - idle_lo + 1
-        schedule.append((clock, minutes))
+        schedule[seq] = (clock, minutes)
         clock += minutes
     return schedule
 
@@ -252,7 +257,11 @@ def _demo_ex01(rng: np.random.Generator) -> list[dict[str, Any]]:
         )
     minute = DEMO_FIRST_TASK_MINUTE
     idle_lo, idle_hi = s["idle_window"]
-    for (seq, task_type, _desc, zone, _pace), (_start, minutes) in zip(DEMO_TASKS, demo_schedule()):
+    tasks = {t[0]: t for t in DEMO_TASKS}
+    schedule = demo_schedule()
+    for seq in DEMO_EXECUTION_ORDER:
+        _, task_type, _desc, zone, _pace = tasks[seq]
+        minutes = schedule[seq][1]
         center = zone_point(zone)
         for _ in range(minutes):
             fatigue = minute >= s["fatigue_from_minute"]
@@ -336,9 +345,10 @@ def make_demo_shift(rng: np.random.Generator) -> dict[str, Any]:
                 "actual_min": minutes,
             }
             for (seq, task_type, desc, zone, _pace), (start, minutes) in zip(
-                DEMO_TASKS, demo_schedule()
+                DEMO_TASKS, (demo_schedule()[t[0]] for t in DEMO_TASKS)
             )
         ],
+        "execution_order": DEMO_EXECUTION_ORDER,
         "script": DEMO_SCRIPT,
         "incident": {
             "minute": DEMO_SCRIPT["incident_minute"],

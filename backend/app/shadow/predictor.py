@@ -109,6 +109,20 @@ def schedule_delta(
     return round(task.start_min + progress - minute, 2)
 
 
+def reorder_timeline(timeline: ShadowTimeline, order: list[int]) -> ShadowTimeline:
+    """Same task predictions in a new order, with start times recomputed from the p50s."""
+    by_seq = {t.seq: t for t in timeline.tasks}
+    if sorted(order) != sorted(by_seq):
+        raise ValueError(f"order {order} is not a permutation of {sorted(by_seq)}")
+    clock = 0.0
+    tasks = []
+    for seq in order:
+        task = by_seq[seq]
+        tasks.append(task.model_copy(update={"start_min": round(clock, 2)}))
+        clock += task.duration_min.p50
+    return timeline.model_copy(update={"tasks": tasks})
+
+
 @lru_cache
 def get_predictor() -> ShadowPredictor:
     return ShadowPredictor.load()

@@ -81,12 +81,13 @@ def test_second_machine_reaches_incident_location_only_after_approach(result):
 
 
 def test_demo_tasks_fill_the_shift_and_contain_scripted_events(result):
-    tasks = result["demo"]["tasks"]
+    by_seq = {t["seq"]: t for t in result["demo"]["tasks"]}
+    tasks = [by_seq[seq] for seq in result["demo"]["execution_order"]]
     assert tasks[0]["actual_start_min"] == DEMO_FIRST_TASK_MINUTE
     for prev, nxt in zip(tasks, tasks[1:]):
         assert nxt["actual_start_min"] == prev["actual_start_min"] + prev["actual_min"]
     assert tasks[-1]["actual_start_min"] + tasks[-1]["actual_min"] == SHIFT_MINUTES
-    ramp = tasks[2]
+    ramp = by_seq[3]
     ramp_minutes = range(ramp["actual_start_min"], ramp["actual_start_min"] + ramp["actual_min"])
     assert ramp["zone"] == "ramp"
     assert DEMO_SCRIPT["idle_window"][0] in ramp_minutes
