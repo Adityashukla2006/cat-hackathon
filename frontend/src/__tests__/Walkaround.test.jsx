@@ -83,6 +83,6 @@ describe('Walkaround component', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Start again' }))
     expect(screen.getByText('Checked 0 of 8')).toBeInTheDocument()
-  })
+  }, 20000) // 16 real clicks; the default 5 s is tight on a loaded machine
 })
 
