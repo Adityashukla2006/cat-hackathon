@@ -6,11 +6,13 @@ Agents call `get_llm()` and use `structured()` for anything they parse. Tests sw
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
-from pydantic import BaseModel
+import openai
+from pydantic import BaseModel, ValidationError
 
 from app.config import get_settings
 
@@ -19,6 +21,15 @@ T = TypeVar("T", bound=BaseModel)
 
 class LLMError(RuntimeError):
     pass
+
+
+@contextmanager
+def _sdk_errors() -> Iterator[None]:
+    """Surface SDK, network, and parsing failures as LLMError so callers can fall back."""
+    try:
+        yield
+    except (openai.OpenAIError, ValidationError) as exc:
+        raise LLMError(f"{type(exc).__name__}: {exc}") from exc
 
 
 class LLMClient(Protocol):
@@ -48,21 +59,20 @@ class OpenAILLM:
             key = get_settings().openai_api_key
             if key is None or not key.get_secret_value():
                 raise LLMError("OPENAI_API_KEY is not set")
-            from openai import OpenAI
-
-            self._client = OpenAI(api_key=key.get_secret_value())
+            self._client = openai.OpenAI(api_key=key.get_secret_value(), timeout=30.0)
         return self._client
 
     def structured(self, system: str, user: str, schema: type[T]) -> T:
-        completion = self.client.beta.chat.completions.parse(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-            response_format=schema,
-            temperature=0,
-        )
+        with _sdk_errors():
+            completion = self.client.beta.chat.completions.parse(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user},
+                ],
+                response_format=schema,
+                temperature=0,
+            )
         message = completion.choices[0].message
         if getattr(message, "refusal", None):
             raise LLMError(f"model refused: {message.refusal}")
@@ -71,11 +81,15 @@ class OpenAILLM:
         return message.parsed
 
     def transcribe(self, audio: bytes, filename: str = "note.webm") -> str:
-        result = self.client.audio.transcriptions.create(model="whisper-1", file=(filename, audio))
+        with _sdk_errors():
+            result = self.client.audio.transcriptions.create(
+                model="whisper-1", file=(filename, audio)
+            )
         return result.text
 
     def embed(self, texts: list[str]) -> list[list[float]]:
-        response = self.client.embeddings.create(model=self.embed_model, input=texts)
+        with _sdk_errors():
+            response = self.client.embeddings.create(model=self.embed_model, input=texts)
         return [item.embedding for item in response.data]
 
 

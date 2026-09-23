@@ -10,6 +10,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.agents.planner import PlanResult, plan_shift
 from app.config import get_settings
 from app.db import get_engine, init_db
 from app.replay import (
@@ -96,6 +97,18 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         demo: dict[str, Any] = Depends(get_demo), shadow: ShadowPredictor = Depends(get_predictor)
     ) -> ShadowTimeline:
         return shadow.predict(demo_context(demo))
+
+    @app.get("/demo/plan", response_model=PlanResult)
+    def demo_plan(
+        request: Request,
+        demo: dict[str, Any] = Depends(get_demo),
+        shadow: ShadowPredictor = Depends(get_predictor),
+    ) -> PlanResult:
+        """Scored shadow plus the pre-shift briefing, computed once per process."""
+        if getattr(request.app.state, "demo_plan", None) is None:
+            ctx = demo_context(demo)
+            request.app.state.demo_plan = plan_shift(ctx, shadow.predict(ctx))
+        return request.app.state.demo_plan
 
     @app.websocket("/ws/telemetry")
     async def telemetry_ws(
