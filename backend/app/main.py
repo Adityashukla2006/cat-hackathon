@@ -21,6 +21,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.agents.assistant import answer as assistant_answer
 from app.agents.planner import PlanResult, plan_shift
 from app.agents.scribe import transcribe, write_report
 from app.config import get_settings
@@ -39,6 +40,8 @@ from app.replay import DEFAULT_SPEED, DemoNotGeneratedError, demo_context, get_d
 from app.retrieval import GuideIndex, get_guide_index
 from app.schemas import (
     AlertOut,
+    ChatAnswer,
+    ChatRequest,
     GuideHitOut,
     HazardPinOut,
     HealthOut,
@@ -180,6 +183,15 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             )
             for h in index.search(q, k=k)
         ]
+
+    @app.post("/chat", response_model=ChatAnswer)
+    async def chat(
+        body: ChatRequest, request: Request, index: GuideIndex = Depends(get_guide_index)
+    ) -> ChatAnswer:
+        """The operator's chatbot. Uses the live shift when a replay is running."""
+        hub: ReplayHub = request.app.state.hub
+        session = hub.runtime.session if hub.runtime is not None and hub.running else None
+        return await asyncio.to_thread(assistant_answer, body.message, session, index)
 
     @app.get("/hazards", response_model=list[HazardPinOut])
     def list_hazards(request: Request, db: Session = Depends(get_session)) -> list[HazardPinOut]:

@@ -114,14 +114,18 @@ class ShiftRuntime:
         )
         self.db.add(row)
         self.db.commit()
-        return AlertOut.model_validate(row)
+        out = AlertOut.model_validate(row)
+        self.session.memory.setdefault("alerts", []).append(out)
+        return out
 
     def _outputs(self, minute: int, state: GraphState) -> list[BaseModel]:
         messages: list[BaseModel] = []
         if state.get("delta_min") is not None:
+            self.session.memory["last_delta"] = state["delta_min"]
             messages.append(WsShadowDelta(minute=minute, delta_min=state["delta_min"]))
         if state.get("fatigue") is not None:
             reading = state["fatigue"]
+            self.session.memory["last_fatigue"] = reading
             messages.append(WsFatigue(minute=minute, score=reading.score, factors=reading.factors))
         messages.extend(WsAlert(alert=self._store_alert(a)) for a in state.get("alerts", []))
         messages.extend(state.get("hazard_warnings", []))
