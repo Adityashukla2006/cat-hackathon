@@ -60,6 +60,7 @@ def run_event(graph: Any, session: ShiftSession, event: ShiftEvent) -> GraphStat
             "session": session,
             "event": event,
             "alerts": [],
+            "delta_min": None,
             "needs_replan": False,
             "replan_reason": None,
             "replan": None,
@@ -67,3 +68,11 @@ def run_event(graph: Any, session: ShiftSession, event: ShiftEvent) -> GraphStat
             "incident": None,
         }
     )
+
+
+def default_graph():
+    """The graph wired with the real agents."""
+    from app.agents.planner import planner_node
+    from app.agents.sentinel import sentinel_node
+
+    return build_graph(planner=planner_node, sentinel=sentinel_node)

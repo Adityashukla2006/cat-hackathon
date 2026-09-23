@@ -12,7 +12,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.agents.planner import PlanResult, plan_shift
 from app.config import get_settings
-from app.db import get_engine, init_db
+from app.db import get_engine, init_db, make_session_factory
+from app.runtime import ShiftRuntime
 from app.replay import (
     DEFAULT_SPEED,
     DemoNotGeneratedError,
@@ -26,11 +27,8 @@ from app.schemas import (
     ShadowTimeline,
     ShiftContext,
     WsReplayStatus,
-    WsShadowDelta,
-    WsTelemetry,
 )
 from app.shadow.predictor import ModelsNotTrainedError, ShadowPredictor, get_predictor
-from app.shadow.tracker import ShadowTracker
 
 
 def get_demo_timeline(demo: dict[str, Any] = Depends(get_demo)) -> ShadowTimeline | None:
@@ -118,23 +116,22 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         demo: dict[str, Any] = Depends(get_demo),
         timeline: ShadowTimeline | None = Depends(get_demo_timeline),
     ) -> None:
-        """Stream the demo shift: telemetry frames plus the operator's ahead/behind delta.
+        """Stream the demo shift through the agents: telemetry frames, the operator's
+        ahead/behind delta, alerts, and replans.
 
         Clients may send {"action": "pause" | "resume" | "stop"}.
         """
         await ws.accept()
         replay = ReplayEngine(demo_frames(demo), speed=speed)
-        tracker = ShadowTracker(timeline, demo["shift"]["machine_id"]) if timeline else None
+        db = make_session_factory(ws.app.state.engine)()
+        runtime = await asyncio.to_thread(ShiftRuntime, db, demo, timeline)
         controls = asyncio.create_task(_receive_controls(ws, replay))
         try:
             await ws.send_text(WsReplayStatus(state="started", minute=start).model_dump_json())
             async for minute, frames in replay.run(start_minute=start):
-                for frame in frames:
-                    await ws.send_text(WsTelemetry(frame=frame).model_dump_json())
-                    delta = tracker.update(frame) if tracker else None
-                    if delta is not None:
-                        msg = WsShadowDelta(minute=minute, delta_min=delta)
-                        await ws.send_text(msg.model_dump_json())
+                messages = await asyncio.to_thread(runtime.process_minute, minute, frames)
+                for message in messages:
+                    await ws.send_text(message.model_dump_json())
             final = replay.minute if replay.minute is not None else start
             await ws.send_text(WsReplayStatus(state="finished", minute=final).model_dump_json())
             await ws.close()
@@ -145,6 +142,7 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             controls.cancel()
             with suppress(asyncio.CancelledError):
                 await controls
+            db.close()
 
     return app
 

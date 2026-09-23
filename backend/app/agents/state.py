@@ -64,6 +64,7 @@ class GraphState(TypedDict, total=False):
     session: ShiftSession
     event: ShiftEvent
     alerts: list[AlertDraft]
+    delta_min: float | None
     needs_replan: bool
     replan_reason: str | None
     replan: Replan | None
