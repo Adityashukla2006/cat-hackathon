@@ -61,15 +61,15 @@ def test_prediction_is_deterministic(predictor):
 def test_schedule_delta(predictor):
     timeline = predictor.predict(_ctx())
     task2 = timeline.tasks[1]
-    # started task 2 exactly on time and working at shadow pace -> zero delta
-    on_time = schedule_delta(timeline, task2.start_min + 5, 2, task2.start_min)
+    # 5 minutes into task 2 at exactly the shadow's time -> zero delta
+    on_time = schedule_delta(timeline, task2.start_min + 5, 2, progress_min=5)
     assert on_time == pytest.approx(0, abs=0.01)
-    # started task 2 ten minutes late -> ten minutes behind
-    late = schedule_delta(timeline, task2.start_min + 15, 2, task2.start_min + 10)
+    # only 5 minutes of progress but 15 minutes on the clock -> ten minutes behind
+    late = schedule_delta(timeline, task2.start_min + 15, 2, progress_min=5)
     assert late == pytest.approx(-10, abs=0.01)
-    # overrunning past p50 keeps falling behind
+    # progress is capped at p50, so overrunning keeps falling behind
     overrun = schedule_delta(
-        timeline, task2.start_min + task2.duration_min.p50 + 7, 2, task2.start_min
+        timeline, task2.start_min + task2.duration_min.p50 + 7, 2, progress_min=999
     )
     assert overrun == pytest.approx(-7, abs=0.01)
     with pytest.raises(ValueError):

@@ -4,7 +4,7 @@ import pytest
 
 from app.geo import distance_m
 from app.schemas import TelemetryFrame
-from data.generate import DEMO_SCRIPT, SHIFT_MINUTES, generate
+from data.generate import DEMO_FIRST_TASK_MINUTE, DEMO_SCRIPT, SHIFT_MINUTES, generate
 
 
 @pytest.fixture(scope="module")
@@ -80,10 +80,33 @@ def test_second_machine_reaches_incident_location_only_after_approach(result):
             assert d < 30
 
 
+def test_demo_tasks_fill_the_shift_and_contain_scripted_events(result):
+    tasks = result["demo"]["tasks"]
+    assert tasks[0]["actual_start_min"] == DEMO_FIRST_TASK_MINUTE
+    for prev, nxt in zip(tasks, tasks[1:]):
+        assert nxt["actual_start_min"] == prev["actual_start_min"] + prev["actual_min"]
+    assert tasks[-1]["actual_start_min"] + tasks[-1]["actual_min"] == SHIFT_MINUTES
+    ramp = tasks[2]
+    ramp_minutes = range(ramp["actual_start_min"], ramp["actual_start_min"] + ramp["actual_min"])
+    assert ramp["zone"] == "ramp"
+    assert DEMO_SCRIPT["idle_window"][0] in ramp_minutes
+    assert DEMO_SCRIPT["idle_window"][1] in ramp_minutes
+    assert DEMO_SCRIPT["incident_minute"] in ramp_minutes
+    assert DEMO_SCRIPT["second_machine_approach"][0] > DEMO_SCRIPT["incident_minute"]
+    fatigue_task = next(
+        t
+        for t in tasks
+        if t["actual_start_min"]
+        <= DEMO_SCRIPT["fatigue_from_minute"]
+        < t["actual_start_min"] + t["actual_min"]
+    )
+    assert fatigue_task is tasks[-1]
+
+
 def test_generate_writes_files(tmp_path):
     generate(seed=42, out_dir=tmp_path, n_shifts=5)
     assert (tmp_path / "history.csv").exists()
     demo = json.loads((tmp_path / "demo_shift.json").read_text())
-    assert [t["seq"] for t in demo["tasks"]] == list(range(1, 9))
+    assert [t["seq"] for t in demo["tasks"]] == list(range(1, 7))
     roster = json.loads((tmp_path / "operators.json").read_text())
     assert "skill" not in roster[0]

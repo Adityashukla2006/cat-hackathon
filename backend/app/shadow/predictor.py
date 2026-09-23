@@ -94,17 +94,18 @@ class ShadowPredictor:
 
 
 def schedule_delta(
-    timeline: ShadowTimeline, minute: float, task_seq: int, task_started_min: float
+    timeline: ShadowTimeline, minute: float, task_seq: int, progress_min: float
 ) -> float:
     """Minutes ahead (+) or behind (-) the shadow.
 
-    Where the shadow would be, given the real machine is `minute - task_started_min` into
-    task `task_seq`, compared with the real clock. Work inside a task counts up to its p50.
+    `progress_min` is how much of task `task_seq` the real machine has done, in shadow minutes.
+    The shadow would reach that point at `start_min + progress`; comparing that with the real
+    clock gives the delta. Progress counts up to the task's p50.
     """
     task = next((t for t in timeline.tasks if t.seq == task_seq), None)
     if task is None:
         raise ValueError(f"task {task_seq} is not in the shadow timeline")
-    progress = min(max(minute - task_started_min, 0.0), task.duration_min.p50)
+    progress = min(max(progress_min, 0.0), task.duration_min.p50)
     return round(task.start_min + progress - minute, 2)
 
 

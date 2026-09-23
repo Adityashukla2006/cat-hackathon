@@ -64,29 +64,27 @@ SHIFT_MINUTES = 480
 DEMO_SCRIPT: dict[str, Any] = {
     "engine_on_minute": 2,
     "seatbelt_unbuckled": [2, 5],  # inclusive range, engine on, belt off
-    "idle_window": [95, 119],  # unplanned idle during task 3
-    "incident_minute": 140,
+    "idle_window": [150, 174],  # unplanned idle during task 3, on the ramp
+    "incident_minute": 200,
     "incident_transcript": (
         "Ground is soft at the edge of the haul ramp, right track sank about a foot. "
         "I backed off and stopped work there."
     ),
-    "second_machine_approach": [190, 199],  # WL-02 drives towards the ramp
-    "second_machine_at_hazard": [200, 215],
+    "second_machine_approach": [250, 259],  # WL-02 drives towards the ramp
+    "second_machine_at_hazard": [260, 275],
     "fatigue_from_minute": 400,
 }
 
 DEMO_WEATHER = {"temp_c": 14.0, "rain_mm": 4.0, "wind_kph": 18.0, "ground": "wet"}
 
-# (seq, task_type, description, zone, actual_minutes)
-DEMO_TASKS: list[tuple[int, str, str, str, int]] = [
-    (1, "dig", "Dig pit face A", "pit", 48),
-    (2, "load_truck", "Load haul trucks at the pit", "pit", 40),
-    (3, "trench", "Cut drainage ditch along the haul ramp", "ramp", 80),
-    (4, "load_truck", "Load haul trucks at the pit", "pit", 45),
-    (5, "grade", "Grade the haul ramp", "ramp", 55),
-    (6, "stockpile", "Build stockpile from pit spoil", "stockpile", 55),
-    (7, "load_truck", "Load haul trucks from stockpile", "stockpile", 60),
-    (8, "grade", "Grade the yard pad", "yard", 90),
+# (seq, task_type, description, zone, pace vs the ground-truth duration)
+DEMO_TASKS: list[tuple[int, str, str, str, float]] = [
+    (1, "dig", "Dig pit face A", "pit", 0.97),
+    (2, "load_truck", "Load haul trucks at the pit", "pit", 1.0),
+    (3, "trench", "Cut drainage ditch along the haul ramp", "ramp", 1.0),
+    (4, "load_truck", "Load haul trucks at the pit", "pit", 1.02),
+    (5, "grade", "Grade the yard pad", "yard", 1.0),
+    (6, "stockpile", "Build stockpile from pit spoil", "stockpile", 1.0),  # runs to shift end
 ]
 DEMO_FIRST_TASK_MINUTE = 7
 
@@ -117,6 +115,38 @@ def expected_duration(
         * (1.0 + 0.02 * rain_mm)
         * fatigue
     )
+
+
+def demo_schedule() -> list[tuple[int, int]]:
+    """(start_minute, minutes) per demo task.
+
+    Tasks run at their scripted pace against the ground-truth duration for the demo operator.
+    Task 3 also contains the unplanned idle window, and the last task runs on to the shift end
+    because fatigue slows it down.
+    """
+    op = OPERATORS[0]
+    idle_lo, idle_hi = DEMO_SCRIPT["idle_window"]
+    schedule: list[tuple[int, int]] = []
+    clock = DEMO_FIRST_TASK_MINUTE
+    for i, (seq, task_type, _desc, _zone, pace) in enumerate(DEMO_TASKS):
+        if i == len(DEMO_TASKS) - 1:
+            minutes = SHIFT_MINUTES - clock
+        else:
+            truth = expected_duration(
+                task_type,
+                op["experience_years"],
+                op["skill"],
+                "excavator",
+                DEMO_WEATHER["ground"],
+                DEMO_WEATHER["rain_mm"],
+                7.0 + clock / 60.0,
+            )
+            minutes = round(truth * pace)
+            if seq == 3:
+                minutes += idle_hi - idle_lo + 1
+        schedule.append((clock, minutes))
+        clock += minutes
+    return schedule
 
 
 def make_history(rng: np.random.Generator, n_shifts: int = 300) -> pd.DataFrame:
@@ -222,9 +252,9 @@ def _demo_ex01(rng: np.random.Generator) -> list[dict[str, Any]]:
         )
     minute = DEMO_FIRST_TASK_MINUTE
     idle_lo, idle_hi = s["idle_window"]
-    for seq, task_type, _desc, zone, actual in DEMO_TASKS:
+    for (seq, task_type, _desc, zone, _pace), (_start, minutes) in zip(DEMO_TASKS, demo_schedule()):
         center = zone_point(zone)
-        for _ in range(actual):
+        for _ in range(minutes):
             fatigue = minute >= s["fatigue_from_minute"]
             if idle_lo <= minute <= idle_hi:
                 frames.append(
@@ -302,9 +332,12 @@ def make_demo_shift(rng: np.random.Generator) -> dict[str, Any]:
                 "task_type": task_type,
                 "description": desc,
                 "zone": zone,
-                "actual_min": actual,
+                "actual_start_min": start,
+                "actual_min": minutes,
             }
-            for seq, task_type, desc, zone, actual in DEMO_TASKS
+            for (seq, task_type, desc, zone, _pace), (start, minutes) in zip(
+                DEMO_TASKS, demo_schedule()
+            )
         ],
         "script": DEMO_SCRIPT,
         "incident": {
