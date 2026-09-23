@@ -26,8 +26,17 @@ def predictor(model_dir):
     return ShadowPredictor.load(model_dir)
 
 
-@pytest.fixture
-def fake_llm() -> FakeLLM:
+@pytest.fixture(autouse=True)
+def fake_llm(monkeypatch) -> FakeLLM:
+    """Every test runs against a FakeLLM; building a real OpenAI client fails loudly.
+
+    With no responses registered, agents get an LLMError and use their template fallback.
+    """
+
+    def no_real_client(*args, **kwargs):
+        raise AssertionError("tests must not create a real OpenAI client")
+
+    monkeypatch.setattr("openai.OpenAI", no_real_client)
     fake = FakeLLM()
     set_llm(fake)
     try:
