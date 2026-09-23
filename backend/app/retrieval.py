@@ -92,6 +92,8 @@ class GuideIndex:
                     self.cache_path.write_text(json.dumps(cache))
         except LLMError:
             return None
+        if len({len(cache[k]) for k in keys}) != 1:
+            return None  # cache mixes embedding models; keywords only
         matrix = np.array([cache[k] for k in keys], dtype=float)
         norms = np.linalg.norm(matrix, axis=1, keepdims=True)
         return matrix / np.where(norms == 0, 1, norms)
@@ -103,6 +105,8 @@ class GuideIndex:
             vec = np.array(self.llm.embed([query])[0], dtype=float)
         except LLMError:
             return None
+        if vec.shape != (self.vectors.shape[1],):
+            return None  # sections were embedded by a different model
         norm = np.linalg.norm(vec)
         return vec / norm if norm else None
 

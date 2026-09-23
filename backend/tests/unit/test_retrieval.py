@@ -54,6 +54,22 @@ def test_falls_back_to_keywords_when_embedding_fails(sections):
     assert index.search("seatbelt")[0].section.guide_id == "seatbelt-and-cab-safety"
 
 
+def test_cached_vectors_from_another_model_fall_back_to_keywords(sections, tmp_path):
+    cache = tmp_path / "emb.json"
+    GuideIndex(sections, llm=FakeLLM(embedding_dim=16), cache_path=cache)
+    index = GuideIndex(sections, llm=FakeLLM(embedding_dim=8), cache_path=cache)
+    hits = index.search("seatbelt engine running")
+    assert hits[0].section.guide_id == "seatbelt-and-cab-safety"
+
+
+def test_cache_mixing_dimensions_falls_back_to_keywords(sections, tmp_path):
+    cache = tmp_path / "emb.json"
+    GuideIndex(sections[:2], llm=FakeLLM(embedding_dim=16), cache_path=cache)
+    index = GuideIndex(sections, llm=FakeLLM(embedding_dim=8), cache_path=cache)
+    assert index.vectors is None
+    assert index.search("seatbelt")[0].section.guide_id == "seatbelt-and-cab-safety"
+
+
 def test_unrelated_question_returns_nothing(sections):
     assert GuideIndex(sections, llm=None).search("what is the capital of france") == []
 
