@@ -18,6 +18,18 @@ describe('App shell', () => {
     }
   })
 
+  it('shows the Caterpillar logo', () => {
+    render(
+      <MemoryRouter>
+        <App />
+      </MemoryRouter>,
+    )
+    expect(screen.getByRole('img', { name: 'Caterpillar' })).toHaveAttribute(
+      'src',
+      '/cat-logo.svg',
+    )
+  })
+
   it('navigates to the training page', async () => {
     render(
       <MemoryRouter>

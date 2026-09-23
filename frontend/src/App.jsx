@@ -17,7 +17,8 @@ function TabletRoute() {
 export default function App() {
   return (
     <div className="min-h-screen">
-      <nav className="flex gap-2 bg-neutral-900 p-2">
+      <nav className="flex items-center gap-2 bg-neutral-900 p-2">
+        <img src="/cat-logo.svg" alt="Caterpillar" className="mr-4 h-7 px-3" />
         {links.map((l) => (
           <NavLink
             key={l.to}
