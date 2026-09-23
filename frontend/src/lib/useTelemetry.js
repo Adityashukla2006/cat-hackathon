@@ -36,10 +36,10 @@ export function useTelemetry({ speed = 60, createSocket = defaultSocket, onMessa
     return () => socket.close()
   }, [speed, createSocket])
 
-  const send = useCallback((action) => {
+  const send = useCallback((action, extra = {}) => {
     const socket = socketRef.current
     if (socket && socket.readyState === 1) {
-      socket.send(JSON.stringify({ action }))
+      socket.send(JSON.stringify({ action, ...extra }))
       if (action === 'pause') setStatus('paused')
       if (action === 'resume') setStatus('live')
     }

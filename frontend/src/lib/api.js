@@ -19,3 +19,11 @@ export function postJson(path, body) {
     body: JSON.stringify(body),
   })
 }
+
+export async function postForm(path, formData) {
+  const response = await fetch(API_URL + path, { method: 'POST', body: formData })
+  if (!response.ok) {
+    throw new Error(`${response.status} ${path}`)
+  }
+  return response.json()
+}

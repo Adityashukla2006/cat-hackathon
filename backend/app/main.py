@@ -16,7 +16,7 @@ from fastapi import (
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -24,7 +24,7 @@ from sqlalchemy.orm import Session
 from app.agents.planner import PlanResult, plan_shift
 from app.agents.scribe import transcribe, write_report
 from app.config import get_settings
-from app.db import Incident, Shift, get_engine, init_db, make_session_factory
+from app.db import Alert, Incident, Shift, get_engine, init_db, make_session_factory
 from app.llm import LLMError
 from app.runtime import ShiftRuntime
 from app.replay import (
@@ -36,6 +36,7 @@ from app.replay import (
     get_demo,
 )
 from app.schemas import (
+    AlertOut,
     HealthOut,
     IncidentCreate,
     IncidentOut,
@@ -140,6 +141,22 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             ctx = demo_context(demo)
             request.app.state.demo_plan = plan_shift(ctx, shadow.predict(ctx))
         return request.app.state.demo_plan
+
+    @app.get("/shifts/{shift_id}/alerts", response_model=list[AlertOut])
+    def list_alerts(shift_id: int, db: Session = Depends(get_session)) -> list[AlertOut]:
+        rows = db.scalars(
+            select(Alert).where(Alert.shift_id == shift_id).order_by(Alert.minute, Alert.id)
+        )
+        return [AlertOut.model_validate(r) for r in rows]
+
+    @app.post("/alerts/{alert_id}/ack", response_model=AlertOut)
+    def acknowledge_alert(alert_id: int, db: Session = Depends(get_session)) -> AlertOut:
+        alert = db.get(Alert, alert_id)
+        if alert is None:
+            raise HTTPException(status_code=404, detail="alert not found")
+        alert.acknowledged = True
+        db.commit()
+        return AlertOut.model_validate(alert)
 
     @app.post("/transcribe", response_model=TranscriptOut)
     async def transcribe_audio(audio: UploadFile = File(...)) -> TranscriptOut:
