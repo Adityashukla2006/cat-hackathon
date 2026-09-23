@@ -51,6 +51,7 @@ describe('Training page', () => {
     vi.clearAllMocks()
     getJson.mockImplementation(async (path) => {
       if (path.startsWith('/training/modules')) return MODULES
+      if (path === '/operators/1/coach') throw new Error('no coach in this test')
       if (path === '/training/lessons/walkaround') return LESSON
       if (path === '/guides/pre-start-walkaround') return GUIDE
       throw new Error(`unexpected ${path}`)

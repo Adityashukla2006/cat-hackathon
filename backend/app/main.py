@@ -22,6 +22,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.agents.assistant import answer as assistant_answer
+from app.agents.coach import CoachAdvice, advise
 from app.agents.drills import Drill, drills_for_shift, shift_moments
 from app.agents.planner import PlanResult, plan_shift
 from app import training
@@ -337,6 +338,11 @@ def create_app(engine: Engine | None = None) -> FastAPI:
             correct_option=drill.content.options[drill.content.answer],
             explanation=drill.content.explanation,
         )
+
+    @app.get("/operators/{operator_id}/coach", response_model=CoachAdvice)
+    async def coach(operator_id: int, db: Session = Depends(get_session)) -> CoachAdvice:
+        _require_operator(db, operator_id)
+        return await asyncio.to_thread(advise, db, operator_id)
 
     @app.get("/hazards", response_model=list[HazardPinOut])
     def list_hazards(request: Request, db: Session = Depends(get_session)) -> list[HazardPinOut]:

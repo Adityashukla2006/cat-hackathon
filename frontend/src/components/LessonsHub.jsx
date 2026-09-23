@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import CoachCard from './CoachCard'
 import { getJson, postJson } from '../lib/api'
 import { OPERATOR_ID } from '../lib/site'
 
@@ -150,7 +151,7 @@ function LessonView({ lessonId, onBack, onPractice }) {
 }
 
 /** Curriculum: modules of lessons with progress, each lesson with key points, guide, and quiz. */
-export default function LessonsHub({ onPractice = () => {} }) {
+export default function LessonsHub({ onPractice = () => {}, instructorSlot }) {
   const [refresh, setRefresh] = useState(0)
   const { data: modules, error } = useJson(`/training/modules?operator_id=${OPERATOR_ID}&r=${refresh}`)
   const [lessonId, setLessonId] = useState(null)
@@ -172,6 +173,7 @@ export default function LessonsHub({ onPractice = () => {} }) {
 
   return (
     <section aria-label="Lessons" className="flex flex-col gap-6">
+      <CoachCard onOpenLesson={setLessonId}>{instructorSlot}</CoachCard>
       {modules.map((m) => (
         <div key={m.id}>
           <h2 className="mb-3 text-2xl font-black">{m.title}</h2>
