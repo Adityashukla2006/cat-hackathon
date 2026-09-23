@@ -294,6 +294,7 @@ def make_demo_shift(rng: np.random.Generator) -> dict[str, Any]:
             "weather": {k: v for k, v in DEMO_WEATHER.items() if k != "ground"},
             "site_conditions": {"ground": DEMO_WEATHER["ground"]},
         },
+        "operator": {k: v for k, v in OPERATORS[0].items() if k != "skill"},
         "machines": MACHINES,
         "tasks": [
             {

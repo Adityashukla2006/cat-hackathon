@@ -6,23 +6,56 @@ import asyncio
 import json
 from collections import defaultdict
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterable
+from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from app.schemas import TelemetryFrame
+from app.schemas import PlannedTask, ShiftContext, TelemetryFrame
 
 DEFAULT_DEMO_PATH = Path(__file__).resolve().parents[1] / "data" / "generated" / "demo_shift.json"
 DEFAULT_SPEED = 60.0
 
 
+class DemoNotGeneratedError(FileNotFoundError):
+    pass
+
+
 def load_demo(path: Path = DEFAULT_DEMO_PATH) -> dict[str, Any]:
     if not path.exists():
-        raise FileNotFoundError(f"{path} not found; run `python data/generate.py --seed 42`")
+        raise DemoNotGeneratedError(f"{path} not found; run `python data/generate.py --seed 42`")
     return json.loads(path.read_text())
+
+
+@lru_cache
+def get_demo() -> dict[str, Any]:
+    return load_demo()
 
 
 def demo_frames(demo: dict[str, Any]) -> list[TelemetryFrame]:
     return [TelemetryFrame.model_validate(f) for f in demo["telemetry"]]
+
+
+def demo_context(demo: dict[str, Any]) -> ShiftContext:
+    """The shadow engine's input for the demo operator's machine."""
+    shift = demo["shift"]
+    machine = next(m for m in demo["machines"] if m["id"] == shift["machine_id"])
+    started = datetime.fromisoformat(shift["started_at"])
+    return ShiftContext(
+        shift_id=shift["id"],
+        operator_id=demo["operator"]["id"],
+        experience_years=demo["operator"]["experience_years"],
+        machine_kind=machine["kind"],
+        ground=shift["site_conditions"]["ground"],
+        weather=shift["weather"],
+        start_hour=started.hour + started.minute / 60,
+        tasks=[
+            PlannedTask(
+                seq=t["seq"], task_type=t["task_type"], description=t["description"], zone=t["zone"]
+            )
+            for t in demo["tasks"]
+        ],
+    )
 
 
 class ReplayEngine:
