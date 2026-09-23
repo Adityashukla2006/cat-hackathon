@@ -24,21 +24,32 @@ from sqlalchemy.orm import Session
 from app.agents.planner import PlanResult, plan_shift
 from app.agents.scribe import transcribe, write_report
 from app.config import get_settings
-from app.db import Alert, Incident, Shift, get_engine, init_db, make_session_factory
+from app.db import (
+    Alert,
+    HazardPin,
+    Incident,
+    Shift,
+    get_engine,
+    init_db,
+    make_session_factory,
+)
 from app.llm import LLMError
 from app.hub import ReplayHub
 from app.replay import DEFAULT_SPEED, DemoNotGeneratedError, demo_context, get_demo
 from app.schemas import (
     AlertOut,
+    HazardPinOut,
     HealthOut,
     IncidentCreate,
     IncidentOut,
     ShadowTimeline,
     ShiftContext,
     TranscriptOut,
+    WsHazardPin,
     WsReplayStatus,
 )
 from app.shadow.predictor import ModelsNotTrainedError, ShadowPredictor, get_predictor
+from app.site_memory import active_pins, clear, pin_out, reconfirm
 
 
 def get_demo_timeline(demo: dict[str, Any] = Depends(get_demo)) -> ShadowTimeline | None:
@@ -154,6 +165,38 @@ def create_app(engine: Engine | None = None) -> FastAPI:
         alert.acknowledged = True
         db.commit()
         return AlertOut.model_validate(alert)
+
+    @app.get("/hazards", response_model=list[HazardPinOut])
+    def list_hazards(request: Request, db: Session = Depends(get_session)) -> list[HazardPinOut]:
+        """Active hazard pins with confidence decayed to the site clock."""
+        return active_pins(db, request.app.state.hub.site_now())
+
+    async def _update_pin(request: Request, db: Session, pin_id: int, action: str) -> HazardPinOut:
+        hub: ReplayHub = request.app.state.hub
+        pin = db.get(HazardPin, pin_id)
+        if pin is None:
+            raise HTTPException(status_code=404, detail="hazard not found")
+        now = hub.site_now()
+        if action == "confirm":
+            reconfirm(db, pin, now)
+        else:
+            clear(db, pin)
+        out = pin_out(pin, now)
+        hub.mark_pins_changed()
+        hub.broadcast([WsHazardPin(pin=out, created=False)])
+        return out
+
+    @app.post("/hazards/{pin_id}/confirm", response_model=HazardPinOut)
+    async def confirm_hazard(
+        pin_id: int, request: Request, db: Session = Depends(get_session)
+    ) -> HazardPinOut:
+        return await _update_pin(request, db, pin_id, "confirm")
+
+    @app.post("/hazards/{pin_id}/clear", response_model=HazardPinOut)
+    async def clear_hazard(
+        pin_id: int, request: Request, db: Session = Depends(get_session)
+    ) -> HazardPinOut:
+        return await _update_pin(request, db, pin_id, "clear")
 
     @app.post("/transcribe", response_model=TranscriptOut)
     async def transcribe_audio(audio: UploadFile = File(...)) -> TranscriptOut:

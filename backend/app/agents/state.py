@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Literal, TypedDict
 
 from app.agents.fatigue import FatigueReading
@@ -15,6 +16,7 @@ from app.schemas import (
     ShadowTimeline,
     ShiftContext,
     TelemetryFrame,
+    WsHazardWarning,
 )
 
 
@@ -39,11 +41,17 @@ class ShiftSession:
     task_order: list[int] = field(default_factory=list)
     latest: dict[int, TelemetryFrame] = field(default_factory=dict)
     minute: int = 0
+    started_at: datetime | None = None
     memory: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.task_order:
             self.task_order = [t.seq for t in sorted(self.context.tasks, key=lambda t: t.seq)]
+
+    @property
+    def now(self) -> datetime | None:
+        """Site clock: shift start plus the replay minute."""
+        return self.started_at + timedelta(minutes=self.minute) if self.started_at else None
 
     @property
     def me(self) -> TelemetryFrame | None:
@@ -67,6 +75,7 @@ class GraphState(TypedDict, total=False):
     alerts: list[AlertDraft]
     delta_min: float | None
     fatigue: FatigueReading | None
+    hazard_warnings: list[WsHazardWarning]
     needs_replan: bool
     replan_reason: str | None
     replan: Replan | None

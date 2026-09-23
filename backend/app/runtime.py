@@ -10,9 +10,12 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.agents.state import AlertDraft, GraphState, ShiftSession
-from app.db import Alert, Incident, Machine, Operator, Shift, ShiftTask
+from sqlalchemy import delete, select
+
+from app.db import Alert, HazardPin, Incident, Machine, Operator, Shift, ShiftTask
 from app.graph import default_graph, run_event
 from app.replay import demo_context
+from app.site_memory import active_pins, pin_out, record_hazard
 from app.schemas import (
     AlertOut,
     IncidentOut,
@@ -20,6 +23,7 @@ from app.schemas import (
     TelemetryFrame,
     WsAlert,
     WsFatigue,
+    WsHazardPin,
     WsIncidentLogged,
     WsReplan,
     WsShadowDelta,
@@ -38,6 +42,9 @@ def seed_demo_shift(db: Session, demo: dict[str, Any], timeline: ShadowTimeline 
     spec = demo["shift"]
     existing = db.get(Shift, spec["id"])
     if existing is not None:
+        # a replay starts clean: drop pins this shift's own incidents created, keep the rest
+        incident_ids = select(Incident.id).where(Incident.shift_id == existing.id)
+        db.execute(delete(HazardPin).where(HazardPin.incident_id.in_(incident_ids)))
         db.delete(existing)
     db.flush()
 
@@ -84,10 +91,18 @@ class ShiftRuntime:
             machine_id=shift.machine_id,
             context=demo_context(demo),
             timeline=timeline,
+            started_at=shift.started_at,
         )
+        self.zones = {t["seq"]: t.get("zone") for t in demo["tasks"]}
+        self.refresh_pins()
         # the demo operator's scripted voice note, spoken at its scripted minute
         incident = demo.get("incident")
         self.scripted_notes = {incident["minute"]: incident} if incident else {}
+
+    def refresh_pins(self) -> None:
+        """Reload active hazard pins (with decay at the site clock) into the agents' memory."""
+        self.session.memory["pins"] = active_pins(self.db, self.session.now)
+        self.session.memory["pins_dirty"] = False
 
     def _store_alert(self, draft: AlertDraft) -> AlertOut:
         row = Alert(
@@ -109,6 +124,7 @@ class ShiftRuntime:
             reading = state["fatigue"]
             messages.append(WsFatigue(minute=minute, score=reading.score, factors=reading.factors))
         messages.extend(WsAlert(alert=self._store_alert(a)) for a in state.get("alerts", []))
+        messages.extend(state.get("hazard_warnings", []))
         if state.get("replan") is not None:
             messages.append(WsReplan(minute=minute, replan=state["replan"]))
         return messages
@@ -116,6 +132,8 @@ class ShiftRuntime:
     def process_minute(self, minute: int, frames: list[TelemetryFrame]) -> list[BaseModel]:
         """Run one replay minute; returns telemetry plus everything the agents produced."""
         self.session.minute = minute
+        if self.session.memory.get("pins_dirty"):
+            self.refresh_pins()
         for frame in frames:
             self.session.latest[frame.machine_id] = frame
         state = run_event(
@@ -152,4 +170,24 @@ class ShiftRuntime:
         )
         self.db.add(row)
         self.db.commit()
-        return [WsIncidentLogged(incident=IncidentOut.model_validate(row))]
+        messages: list[BaseModel] = [WsIncidentLogged(incident=IncidentOut.model_validate(row))]
+        report = state["incident"]
+        if report.hazard_kind and row.lat is not None and row.lon is not None:
+            pin, created = record_hazard(
+                self.db,
+                kind=report.hazard_kind,
+                description=report.summary,
+                lat=row.lat,
+                lon=row.lon,
+                at=self.session.now,
+                incident_id=row.id,
+                machine_id=self.session.machine_id,
+            )
+            zone = self.zones.get(me.task_seq) if me else None
+            if zone:
+                zones = self.session.memory.setdefault("hazard_zones", [])
+                if zone not in zones:
+                    zones.append(zone)
+            self.refresh_pins()
+            messages.append(WsHazardPin(pin=pin_out(pin, self.session.now), created=created))
+        return messages

@@ -199,6 +199,7 @@ class HazardPinOut(ORMModel):
     confidence: float = Field(ge=0, le=1)
     active: bool
     last_confirmed_at: datetime
+    reported_by_machine_id: int | None = None
 
 
 class ChatRequest(BaseModel):
@@ -261,6 +262,12 @@ class WsHazardWarning(BaseModel):
     distance_m: float = Field(ge=0)
 
 
+class WsHazardPin(BaseModel):
+    type: Literal["hazard_pin"] = "hazard_pin"
+    pin: HazardPinOut
+    created: bool
+
+
 class WsIncidentLogged(BaseModel):
     type: Literal["incident_logged"] = "incident_logged"
     incident: IncidentOut
@@ -285,6 +292,7 @@ WsMessage = Annotated[
     | WsAlert
     | WsReplan
     | WsHazardWarning
+    | WsHazardPin
     | WsIncidentLogged
     | WsFatigue
     | WsReplayStatus,

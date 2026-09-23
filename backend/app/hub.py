@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from contextlib import suppress
+from datetime import datetime, timezone
 from typing import Any
 
 from pydantic import BaseModel
@@ -45,6 +46,20 @@ class ReplayHub:
 
     def unsubscribe(self, queue: Subscriber) -> None:
         self.subscribers.discard(queue)
+
+    def broadcast(self, messages: list[BaseModel]) -> None:
+        """Push messages to every screen (call from the event loop)."""
+        self._broadcast(messages)
+
+    def site_now(self) -> datetime:
+        """The live shift's clock while a replay runs, otherwise wall-clock time."""
+        if self.runtime is not None and self.running and self.runtime.session.now is not None:
+            return self.runtime.session.now
+        return datetime.now(timezone.utc)
+
+    def mark_pins_changed(self) -> None:
+        if self.runtime is not None:
+            self.runtime.session.memory["pins_dirty"] = True
 
     def _broadcast(self, messages: list[BaseModel]) -> None:
         for queue in self.subscribers:

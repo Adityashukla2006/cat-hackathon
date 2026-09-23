@@ -62,6 +62,7 @@ def run_event(graph: Any, session: ShiftSession, event: ShiftEvent) -> GraphStat
             "alerts": [],
             "delta_min": None,
             "fatigue": None,
+            "hazard_warnings": [],
             "needs_replan": False,
             "replan_reason": None,
             "replan": None,

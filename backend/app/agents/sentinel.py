@@ -6,6 +6,7 @@ Rules run on every telemetry minute for the operator's own machine:
   cycle_deviation falling well behind the shadow timeline
   fuel_deviation  burning well above the shadow's expected fuel rate
   fatigue         the fatigue score (app/agents/fatigue.py) climbs past its alert level
+  hazard          any machine approaching an active site-memory hazard pin (geofence)
 Deviations that change the plan ask the Dispatcher for a replan, with a cooldown.
 """
 
@@ -17,8 +18,9 @@ from typing import Any
 
 from app.agents.fatigue import FatigueReading, FatigueTracker
 from app.agents.state import AlertDraft, GraphState, ShiftSession
-from app.schemas import AlertKind, Severity, ShadowTask, TelemetryFrame
+from app.schemas import AlertKind, Severity, ShadowTask, TelemetryFrame, WsHazardWarning
 from app.shadow.tracker import ShadowTracker
+from app.site_memory import ProximityWatch
 
 IDLE_STREAK_MIN = 10
 IDLE_EXCESS_MIN = 10.0
@@ -40,6 +42,7 @@ class SentinelState:
     fuel_alerted_tasks: set[int] = field(default_factory=set)
     last_replan_minute: int | None = None
     fatigue: FatigueTracker = field(default_factory=FatigueTracker)
+    proximity: ProximityWatch = field(default_factory=ProximityWatch)
 
 
 def get_state(session: ShiftSession) -> SentinelState:
@@ -147,6 +150,27 @@ def check_fatigue(st: SentinelState, reading: FatigueReading) -> AlertDraft | No
     )
 
 
+def check_hazards(
+    st: SentinelState, session: ShiftSession, frames: list[TelemetryFrame]
+) -> tuple[list[AlertDraft], list[WsHazardWarning]]:
+    pins = session.memory.get("pins", [])
+    alerts: list[AlertDraft] = []
+    warnings: list[WsHazardWarning] = []
+    for frame in frames:
+        for pin, dist in st.proximity.check(frame, pins):
+            warnings.append(WsHazardWarning(machine_id=frame.machine_id, pin=pin, distance_m=dist))
+            if frame.machine_id == session.machine_id:
+                alerts.append(
+                    AlertDraft(
+                        frame.minute,
+                        AlertKind.hazard_proximity,
+                        Severity.warning,
+                        f"{pin.description} Reported {dist:.0f} m away. Slow down and keep clear.",
+                    )
+                )
+    return alerts, warnings
+
+
 def _task(session: ShiftSession, seq: int | None) -> ShadowTask | None:
     if session.timeline is None or seq is None:
         return None
@@ -162,6 +186,9 @@ def sentinel_node(state: GraphState) -> dict[str, Any]:
     task = _task(session, frame.task_seq)
     delta = st.tracker.update(frame) if st.tracker else None
     fatigue = st.fatigue.update(frame)
+    hazard_alerts, hazard_warnings = check_hazards(
+        st, session, state["event"].get("frames") or [frame]
+    )
 
     alerts = [
         a
@@ -173,7 +200,7 @@ def sentinel_node(state: GraphState) -> dict[str, Any]:
             check_fatigue(st, fatigue),
         )
         if a is not None
-    ]
+    ] + hazard_alerts
 
     replan_kinds = {AlertKind.idle_deviation, AlertKind.cycle_deviation}
     triggers = [a for a in alerts if a.kind in replan_kinds]
@@ -187,6 +214,7 @@ def sentinel_node(state: GraphState) -> dict[str, Any]:
         "alerts": alerts,
         "delta_min": delta,
         "fatigue": fatigue,
+        "hazard_warnings": hazard_warnings,
         "needs_replan": needs_replan,
         "replan_reason": triggers[0].message if needs_replan else None,
     }
