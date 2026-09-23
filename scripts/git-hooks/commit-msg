@@ -1,0 +1,21 @@
+#!/bin/sh
+# Enforce single-line Conventional Commits: "type: description"
+msg_file="$1"
+first_line=$(head -n 1 "$msg_file")
+pattern='^(feat|fix|test|refactor|chore|docs|style): [a-z0-9][^A-Z]*[^.]$'
+
+if ! printf '%s' "$first_line" | grep -Eq "$pattern"; then
+  echo "commit-msg: expected 'type: description' (lowercase, no trailing period)" >&2
+  echo "  allowed types: feat, fix, test, refactor, chore, docs, style" >&2
+  exit 1
+fi
+
+if [ "${#first_line}" -gt 60 ]; then
+  echo "commit-msg: subject is ${#first_line} chars, max is 60" >&2
+  exit 1
+fi
+
+if grep -Eqi '^(co-authored-by|claude-session):|generated with claude' "$msg_file"; then
+  echo "commit-msg: attribution trailers are not allowed" >&2
+  exit 1
+fi

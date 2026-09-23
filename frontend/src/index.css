@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cat-yellow: #ffcd11;
+  --color-alert-red: #ff3b30;
+}

@@ -1,0 +1,29 @@
+# env
+.env
+.env.*
+!.env.example
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# data and models
+backend/data/generated/
+backend/ml/models/*.txt
+backend/ml/models/*.pkl
+*.db
+
+# node
+node_modules/
+frontend/dist/
+coverage/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
