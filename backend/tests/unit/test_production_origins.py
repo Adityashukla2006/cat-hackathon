@@ -53,8 +53,10 @@ def test_websocket_accepts_the_deployed_frontend(client, origin):
     with client.websocket_connect(
         "/ws/telemetry?speed=1000000&start=478", headers={"Origin": origin}
     ) as ws:
-        first = parse_ws_message(ws.receive_text())
-    assert isinstance(first, WsReplayStatus) and first.state == "started"
+        messages = [parse_ws_message(ws.receive_text())]
+        while not (isinstance(messages[-1], WsReplayStatus) and messages[-1].state == "finished"):
+            messages.append(parse_ws_message(ws.receive_text()))
+    assert messages[0] == WsReplayStatus(state="started", minute=478)
 
 
 def test_websocket_rejects_other_origins(client):
