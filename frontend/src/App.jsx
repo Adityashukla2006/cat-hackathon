@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from 'react-router-dom'
+import Tablet from './pages/Tablet'
 
 const links = [
   { to: '/', label: 'Tablet' },
@@ -30,7 +31,7 @@ export default function App() {
         ))}
       </nav>
       <Routes>
-        <Route path="/" element={<Placeholder title="Tablet" />} />
+        <Route path="/" element={<Tablet />} />
         <Route path="/training" element={<Placeholder title="Training" />} />
         <Route path="/supervisor" element={<Placeholder title="Supervisor" />} />
       </Routes>

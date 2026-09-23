@@ -3,6 +3,8 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import App from '../App'
 
+vi.mock('../pages/Tablet', () => ({ default: () => <h1>Tablet</h1> }))
+
 describe('App shell', () => {
   it('renders the three page links', () => {
     render(
