@@ -69,7 +69,7 @@ class CoachNote(BaseModel):
 class CoachAdvice(BaseModel):
     recommendations: list[Recommendation]
     note: str
-    suggest_instructor: str | None  # lesson title to book an instructor for
+    suggest_instructor: str | None  # lesson id to book an instructor for
 
 
 def _events(db: Session, operator_id: int) -> tuple[list[Alert], list[Incident]]:
@@ -136,7 +136,7 @@ def advise(db: Session, operator_id: int, top_n: int = 3) -> CoachAdvice:
     best = training.best_scores(db, operator_id)
     instructor = next(
         (
-            r.title
+            r.lesson_id
             for r in recs
             if r.weight >= INSTRUCTOR_AT and best.get(r.lesson_id, 0.0) < training.PASS_SCORE
         ),

@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
+import BookingPanel from './BookingPanel'
 import { getJson } from '../lib/api'
 import { OPERATOR_ID } from '../lib/site'
 
 /** The Coach's picks for this operator, from their recorded shifts and practice. */
-export default function CoachCard({ onOpenLesson, children }) {
+export default function CoachCard({ onOpenLesson }) {
   const [advice, setAdvice] = useState(null)
 
   useEffect(() => {
@@ -44,7 +45,15 @@ export default function CoachCard({ onOpenLesson, children }) {
           ))}
         </ol>
       )}
-      {advice.suggest_instructor && children?.(advice.suggest_instructor)}
+      {advice.suggest_instructor && (
+        <BookingPanel
+          topic={advice.suggest_instructor}
+          topicTitle={
+            advice.recommendations.find((r) => r.lesson_id === advice.suggest_instructor)?.title ??
+            advice.suggest_instructor
+          }
+        />
+      )}
     </section>
   )
 }

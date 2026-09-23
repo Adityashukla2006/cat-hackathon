@@ -87,7 +87,7 @@ def test_instructor_suggested_for_heavy_unpassed_topic(db_session, fake_llm):
     _alert(db_session, shift, "seatbelt")
     fake_llm.on(CoachNote, CoachNote(note="Start with the seatbelt lesson."))
     advice = advise(db_session, 1)
-    assert advice.suggest_instructor == "Seatbelt and cab safety"
+    assert advice.suggest_instructor == "seatbelt"
     assert advice.note == "Start with the seatbelt lesson."
     assert fake_llm.calls[-1]["system"] == SYSTEM_PROMPT
     training.record_result(db_session, 1, "seatbelt", 1.0)

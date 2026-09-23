@@ -1,6 +1,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, suppress
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import (
@@ -25,13 +26,14 @@ from app.agents.assistant import answer as assistant_answer
 from app.agents.coach import CoachAdvice, advise
 from app.agents.drills import Drill, drills_for_shift, shift_moments
 from app.agents.planner import PlanResult, plan_shift
-from app import training
+from app import booking, training
 from app.guides import get_guides
 from app.runtime import seed_people
 from app.agents.scribe import transcribe, write_report
 from app.config import get_settings
 from app.db import (
     Alert,
+    Booking,
     HazardPin,
     Incident,
     Operator,
@@ -46,6 +48,9 @@ from app.replay import DEFAULT_SPEED, DemoNotGeneratedError, demo_context, get_d
 from app.retrieval import GuideIndex, get_guide_index
 from app.schemas import (
     AlertOut,
+    BookingCreate,
+    BookingOut,
+    SlotOut,
     ChatAnswer,
     ChatRequest,
     DrillAnswerIn,
@@ -343,6 +348,49 @@ def create_app(engine: Engine | None = None) -> FastAPI:
     async def coach(operator_id: int, db: Session = Depends(get_session)) -> CoachAdvice:
         _require_operator(db, operator_id)
         return await asyncio.to_thread(advise, db, operator_id)
+
+    @app.get("/instructors/slots", response_model=list[SlotOut])
+    def instructor_slots(
+        topic: str,
+        start: date | None = None,
+        days: int = Query(5, ge=1, le=14),
+        db: Session = Depends(get_session),
+    ) -> list[SlotOut]:
+        """Free slots for instructors who teach `topic`, from `start` (default: tomorrow)."""
+        if topic not in training.LESSONS:
+            raise HTTPException(status_code=404, detail="unknown topic")
+        start = start or date.fromordinal(datetime.now(timezone.utc).date().toordinal() + 1)
+        return [
+            SlotOut(instructor=name, slot_start=slot)
+            for name, slot in booking.open_slots(db, topic, start, days)
+        ]
+
+    @app.post("/bookings", response_model=BookingOut, status_code=201)
+    def create_booking(body: BookingCreate, db: Session = Depends(get_session)) -> BookingOut:
+        _require_operator(db, body.operator_id)
+        if body.topic not in training.LESSONS:
+            raise HTTPException(status_code=404, detail="unknown topic")
+        try:
+            row = booking.book(db, body.operator_id, body.topic, body.slot_start, body.instructor)
+        except booking.SlotTakenError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return BookingOut.model_validate(row)
+
+    @app.get("/operators/{operator_id}/bookings", response_model=list[BookingOut])
+    def operator_bookings(operator_id: int, db: Session = Depends(get_session)) -> list[BookingOut]:
+        rows = db.scalars(
+            select(Booking)
+            .where(Booking.operator_id == operator_id, Booking.status == "confirmed")
+            .order_by(Booking.slot_start)
+        )
+        return [BookingOut.model_validate(r) for r in rows]
+
+    @app.post("/bookings/{booking_id}/cancel", response_model=BookingOut)
+    def cancel_booking(booking_id: int, db: Session = Depends(get_session)) -> BookingOut:
+        row = db.get(Booking, booking_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="booking not found")
+        return BookingOut.model_validate(booking.cancel(db, row))
 
     @app.get("/hazards", response_model=list[HazardPinOut])
     def list_hazards(request: Request, db: Session = Depends(get_session)) -> list[HazardPinOut]:

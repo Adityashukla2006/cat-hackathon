@@ -300,6 +300,12 @@ class BookingCreate(BaseModel):
     operator_id: int
     topic: str
     slot_start: datetime
+    instructor: str | None = None
+
+
+class SlotOut(BaseModel):
+    instructor: str
+    slot_start: datetime
 
 
 class BookingOut(ORMModel):

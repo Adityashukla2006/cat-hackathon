@@ -14,20 +14,22 @@ const ADVICE = {
     { lesson_id: 'seatbelt', title: 'Seatbelt and cab safety', weight: 3, reasons: ['engine ran with the seatbelt unbuckled'], practice: null },
     { lesson_id: 'soft-ground', title: 'Soft ground, slopes, and edges', weight: 3, reasons: ['reported: track sank'], practice: null },
   ],
-  suggest_instructor: 'Seatbelt and cab safety',
+  suggest_instructor: 'seatbelt',
 }
 
 describe('CoachCard', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('shows the note and opens a recommended lesson', async () => {
-    getJson.mockResolvedValue(ADVICE)
+    getJson.mockImplementation(async (path) => (path.endsWith('/bookings') ? [] : ADVICE))
     const onOpenLesson = vi.fn()
-    render(<CoachCard onOpenLesson={onOpenLesson}>{(topic) => <p>Book for {topic}</p>}</CoachCard>)
+    render(<CoachCard onOpenLesson={onOpenLesson} />)
     expect(await screen.findByText('Start with the seatbelt lesson.')).toBeInTheDocument()
     expect(getJson).toHaveBeenCalledWith('/operators/1/coach')
     expect(screen.getByText('Because: engine ran with the seatbelt unbuckled')).toBeInTheDocument()
-    expect(screen.getByText('Book for Seatbelt and cab safety')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Book an instructor for Seatbelt and cab safety' }),
+    ).toBeInTheDocument()
     await userEvent.click(screen.getByRole('button', { name: /2\. Soft ground/ }))
     expect(onOpenLesson).toHaveBeenCalledWith('soft-ground')
   })
