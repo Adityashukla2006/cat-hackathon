@@ -59,6 +59,32 @@ class QuantileRange(BaseModel):
         return self
 
 
+class PlannedTask(BaseModel):
+    seq: int = Field(ge=1)
+    task_type: Literal["dig", "load_truck", "trench", "grade", "stockpile"]
+    description: str
+    zone: str | None = None
+
+
+class Weather(BaseModel):
+    temp_c: float
+    rain_mm: float = Field(ge=0)
+    wind_kph: float = Field(ge=0)
+
+
+class ShiftContext(BaseModel):
+    """Everything the shadow engine needs to simulate a shift before it starts."""
+
+    shift_id: int
+    operator_id: int
+    experience_years: float = Field(ge=0)
+    machine_kind: Literal["excavator", "wheel_loader"]
+    ground: Literal["dry", "wet", "muddy"]
+    weather: Weather
+    start_hour: float = Field(default=7.0, ge=0, lt=24)
+    tasks: list[PlannedTask] = Field(min_length=1)
+
+
 class ShadowTask(BaseModel):
     seq: int = Field(ge=1)
     task_type: str
