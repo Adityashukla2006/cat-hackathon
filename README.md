@@ -262,7 +262,8 @@ pytest tests/integration/test_phase_4.py
 ## Team
 
 <!-- add team members and roles here -->
-
+Aditya Shukla
+Varun Suresh
 ---
 
 <sub>Built for the Caterpillar hackathon. Caterpillar, CAT, and their logos are trademarks of Caterpillar Inc.</sub>
