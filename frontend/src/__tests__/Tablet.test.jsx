@@ -49,7 +49,8 @@ describe('helpers', () => {
 
 describe('Tablet page', () => {
   beforeEach(() => {
-    getJson.mockResolvedValue(PLAN)
+    vi.clearAllMocks()
+    getJson.mockImplementation(async (path) => (path === '/hazards' ? [] : PLAN))
     postJson.mockResolvedValue({})
   })
 
@@ -64,6 +65,8 @@ describe('Tablet page', () => {
   it('loads the plan, shows the briefing, and connects to the replay socket', async () => {
     const socket = await setup()
     expect(getJson).toHaveBeenCalledWith('/demo/plan')
+    expect(getJson).toHaveBeenCalledWith('/hazards')
+    expect(screen.getByLabelText('Site map')).toBeInTheDocument()
     expect(screen.getByText('Trench is riskiest')).toBeInTheDocument()
     expect(socket.url).toMatch(/^ws.*\/ws\/telemetry\?speed=60$/)
   })
@@ -137,9 +140,61 @@ describe('Tablet page', () => {
   })
 
   it('shows an error when the plan cannot load', async () => {
-    getJson.mockImplementation(() => Promise.reject(new Error('503 /demo/plan')))
+    getJson.mockImplementation((path) =>
+      path === '/hazards' ? Promise.resolve([]) : Promise.reject(new Error('503 /demo/plan')),
+    )
     const { createSocket } = makeFakeSocket()
     render(<Tablet createSocket={createSocket} />)
     expect(await screen.findByText(/Shadow unavailable/)).toBeInTheDocument()
+  })
+})
+
+const PIN = {
+  id: 3,
+  kind: 'soft_ground',
+  description: 'Right track sank at the ramp edge.',
+  lat: 40.696,
+  lon: -89.588,
+  radius_m: 30,
+  confidence: 1,
+  active: true,
+  last_confirmed_at: '2026-09-23T10:20:00Z',
+  reported_by_machine_id: 1,
+}
+
+describe('Second machine tablet', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    getJson.mockImplementation(async (path) => (path === '/hazards' ? [] : PLAN))
+  })
+
+  it('shows the map and status but not the operator shadow', async () => {
+    const { socket, createSocket } = makeFakeSocket()
+    render(<Tablet machineId={2} createSocket={createSocket} />)
+    socket.open()
+    socket.emit({ type: 'telemetry', frame: frame({ machine_id: 2, minute: 5, speed_kph: 14 }) })
+    expect(screen.getByRole('heading', { name: 'WL-02' })).toBeInTheDocument()
+    expect(screen.getByText('14 km/h')).toBeInTheDocument()
+    expect(screen.queryByLabelText('Shadow timeline')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Hold to report/ })).not.toBeInTheDocument()
+    expect(getJson).not.toHaveBeenCalledWith('/demo/plan')
+  })
+
+  it('shows new pins and warns only this machine on approach', async () => {
+    const { socket, createSocket } = makeFakeSocket()
+    render(<Tablet machineId={2} createSocket={createSocket} />)
+    await waitFor(() => expect(getJson).toHaveBeenCalledWith('/hazards'))
+    socket.open()
+    socket.emit({ type: 'alert', alert: ALERT }) // operator shift alert: not for this machine
+    socket.emit({ type: 'hazard_pin', pin: PIN, created: true })
+    expect(screen.getByTestId('hazard-circle')).toBeInTheDocument()
+    socket.emit({ type: 'hazard_warning', machine_id: 1, pin: PIN, distance_m: 40 })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    socket.emit({ type: 'hazard_warning', machine_id: 2, pin: PIN, distance_m: 67 })
+    expect(screen.getByText('Hazard ahead')).toBeInTheDocument()
+    expect(screen.getByText(/Soft ground 67 m ahead/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Got it' }))
+    expect(screen.queryByText('Hazard ahead')).not.toBeInTheDocument()
+    expect(postJson).not.toHaveBeenCalled()
   })
 })

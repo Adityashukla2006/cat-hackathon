@@ -4,11 +4,12 @@ import AlertBanner from '../components/AlertBanner'
 import BriefingCard from '../components/BriefingCard'
 import ReplanCard from '../components/ReplanCard'
 import ShadowTimeline from '../components/ShadowTimeline'
+import SiteMap from '../components/SiteMap'
 import VoiceButton from '../components/VoiceButton'
 import { getJson, postJson } from '../lib/api'
+import { MACHINES, OPERATOR_MACHINE_ID, mergePin, warningToAlert } from '../lib/site'
 import { useTelemetry } from '../lib/useTelemetry'
 
-const OPERATOR_MACHINE_ID = 1
 const SHIFT_START_HOUR = 7
 
 export function clock(minute) {
@@ -38,7 +39,13 @@ function Tile({ label, value, warn = false }) {
   )
 }
 
-export default function Tablet({ createSocket, startRecording }) {
+/**
+ * Operator tablet. The demo operator's machine (EX-01) gets the full shadow view; any other
+ * machine (?machine=2) gets its site map, status, and hazard warnings.
+ */
+export default function Tablet({ machineId = OPERATOR_MACHINE_ID, createSocket, startRecording }) {
+  const isOperator = machineId === OPERATOR_MACHINE_ID
+  const [pins, setPins] = useState([])
   const [plan, setPlan] = useState(null)
   const [error, setError] = useState(null)
   const [alerts, setAlerts] = useState([])
@@ -47,30 +54,52 @@ export default function Tablet({ createSocket, startRecording }) {
   const [fatigue, setFatigue] = useState(null)
   const [incident, setIncident] = useState(null)
 
-  const onMessage = useCallback((msg) => {
-    if (msg.type === 'alert') setAlerts((prev) => [...prev, msg.alert])
-    if (msg.type === 'replan') {
-      setReplan(msg.replan)
-      setOrder(msg.replan.new_order)
-    }
-    if (msg.type === 'fatigue') setFatigue(msg.score)
-    if (msg.type === 'incident_logged') setIncident(msg.incident)
-    if (msg.type === 'replay_status' && msg.state === 'started') {
-      setAlerts([])
-      setReplan(null)
-      setOrder(null)
-    }
-  }, [])
+  const onMessage = useCallback(
+    (msg) => {
+      if (msg.type === 'hazard_pin') setPins((prev) => mergePin(prev, msg.pin))
+      if (msg.type === 'hazard_warning' && msg.machine_id === machineId) {
+        setAlerts((prev) => [...prev, warningToAlert(msg, Date.now())])
+      }
+      if (msg.type === 'replay_status' && msg.state === 'started') {
+        setAlerts([])
+        setReplan(null)
+        setOrder(null)
+      }
+      if (!isOperator) return
+      // shift alerts, replans, fatigue, and incidents belong to the operator's machine
+      if (msg.type === 'alert') setAlerts((prev) => [...prev, msg.alert])
+      if (msg.type === 'replan') {
+        setReplan(msg.replan)
+        setOrder(msg.replan.new_order)
+      }
+      if (msg.type === 'fatigue') setFatigue(msg.score)
+      if (msg.type === 'incident_logged') setIncident(msg.incident)
+    },
+    [isOperator, machineId],
+  )
 
   const { status, minute, machines, delta, send } = useTelemetry({
     onMessage,
     ...(createSocket ? { createSocket } : {}),
   })
-  const me = machines[OPERATOR_MACHINE_ID]
+  const me = machines[machineId]
 
   useEffect(() => {
     let alive = true
     const load = async () => {
+      try {
+        const current = await getJson('/hazards')
+        // pins that already arrived over the socket are newer than this snapshot
+        if (alive) {
+          setPins((prev) => {
+            const seen = new Set(prev.map((p) => p.id))
+            return [...prev, ...current.filter((p) => !seen.has(p.id))]
+          })
+        }
+      } catch {
+        // the map still works without pins; new ones arrive over the socket
+      }
+      if (!isOperator) return
       try {
         const data = await getJson('/demo/plan')
         if (alive) setPlan(data)
@@ -82,11 +111,11 @@ export default function Tablet({ createSocket, startRecording }) {
     return () => {
       alive = false
     }
-  }, [])
+  }, [isOperator])
 
   const acknowledge = (alert) => {
     setAlerts((prev) => prev.map((a) => (a.id === alert.id ? { ...a, acknowledged: true } : a)))
-    postJson(`/alerts/${alert.id}/ack`, {}).catch(() => {})
+    if (!alert.local) postJson(`/alerts/${alert.id}/ack`, {}).catch(() => {})
   }
 
   const timeline = reorderTimeline(plan?.timeline, order)
@@ -94,7 +123,9 @@ export default function Tablet({ createSocket, startRecording }) {
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-4 p-4">
       <header className="flex items-center justify-between">
-        <h1 className="text-3xl font-black">EX-01</h1>
+        <h1 className="text-3xl font-black">
+          {MACHINES[machineId]?.name ?? `Machine ${machineId}`}
+        </h1>
         <p className="text-3xl font-black tabular-nums" aria-label="Shift clock">
           {clock(minute)}
         </p>
@@ -113,15 +144,19 @@ export default function Tablet({ createSocket, startRecording }) {
         </p>
       )}
 
-      <AheadBehindBar delta={delta} />
-      {error ? (
-        <p role="alert" className="rounded-2xl bg-alert-red p-4 text-xl font-bold">
-          Shadow unavailable: {error}
-        </p>
-      ) : (
-        <ShadowTimeline timeline={timeline} minute={minute} currentSeq={me?.task_seq ?? null} />
+      {isOperator && (
+        <>
+          <AheadBehindBar delta={delta} />
+          {error ? (
+            <p role="alert" className="rounded-2xl bg-alert-red p-4 text-xl font-bold">
+              Shadow unavailable: {error}
+            </p>
+          ) : (
+            <ShadowTimeline timeline={timeline} minute={minute} currentSeq={me?.task_seq ?? null} />
+          )}
+          {minute < 10 && <BriefingCard briefing={plan?.briefing} />}
+        </>
       )}
-      {minute < 10 && <BriefingCard briefing={plan?.briefing} />}
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-5">
         <Tile label="Engine" value={me?.engine_on ? 'On' : 'Off'} />
@@ -132,17 +167,25 @@ export default function Tablet({ createSocket, startRecording }) {
         />
         <Tile label="Load" value={me ? `${Math.round(me.load_pct)}%` : '–'} />
         <Tile label="Fuel" value={me ? `${Math.round(me.fuel_rate_lph)} L/h` : '–'} />
-        <Tile
-          label="Fatigue"
-          value={fatigue == null ? '–' : `${Math.round(fatigue * 100)}%`}
-          warn={fatigue >= 0.6}
-        />
+        {isOperator ? (
+          <Tile
+            label="Fatigue"
+            value={fatigue == null ? '–' : `${Math.round(fatigue * 100)}%`}
+            warn={fatigue >= 0.6}
+          />
+        ) : (
+          <Tile label="Speed" value={me ? `${Math.round(me.speed_kph)} km/h` : '–'} />
+        )}
       </div>
 
-      <VoiceButton
-        onTranscript={(transcript) => send('voice_note', { transcript })}
-        {...(startRecording ? { startRecording } : {})}
-      />
+      <SiteMap machines={machines} pins={pins} focusMachineId={machineId} height={isOperator ? 260 : 420} />
+
+      {isOperator && (
+        <VoiceButton
+          onTranscript={(transcript) => send('voice_note', { transcript })}
+          {...(startRecording ? { startRecording } : {})}
+        />
+      )}
 
       <div className="flex gap-4">
         {status === 'paused' ? (
