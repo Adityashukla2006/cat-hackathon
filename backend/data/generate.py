@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.geo import offset  # noqa: E402
 from app.shadow.features import GROUNDS, TASK_TYPES  # noqa: E402
 
-SITE_CENTER = (40.6950, -89.5890)
+SITE_CENTER = (12.8575, 77.5649)  # Anjanapura quarries, south Bengaluru
 # zone name -> (north_m, east_m) from the site center
 ZONES: dict[str, tuple[float, float]] = {
     "pit": (0.0, 0.0),

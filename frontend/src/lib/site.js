@@ -1,4 +1,4 @@
-export const SITE_CENTER = [40.695, -89.589]
+export const SITE_CENTER = [12.8575, 77.5649] // Anjanapura quarries, south Bengaluru
 export const OPERATOR_MACHINE_ID = 1
 export const OPERATOR_ID = 1
 

@@ -58,8 +58,9 @@ The operator tablet UI is **glove-friendly**: large touch targets, high contrast
 ## The demo shift
 
 The demo is fully deterministic: seed 42, scripted events at fixed minutes, and a replay at
-60× speed. An 8-hour shift plays out in 8 minutes, in wet conditions, with the operator's machine and a
-second machine on the same site: EX-01, a CAT 320 excavator, and WL-02, a CAT 950 wheel loader.
+60× speed. An 8-hour shift plays out in 8 minutes at a quarry site in Anjanapura, south
+Bengaluru, in wet conditions. Two machines share the site: EX-01, a CAT 320 excavator, and
+WL-02, a CAT 950 wheel loader.
 
 | Shift minute | What happens | Who acts |
 |---|---|---|

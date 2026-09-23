@@ -111,3 +111,20 @@ def test_generate_writes_files(tmp_path):
     assert [t["seq"] for t in demo["tasks"]] == list(range(1, 7))
     roster = json.loads((tmp_path / "operators.json").read_text())
     assert "skill" not in roster[0]
+
+
+def test_demo_site_is_in_bengaluru(result):
+    from data.generate import SITE_CENTER
+
+    assert 12.8 < SITE_CENTER[0] < 13.2 and 77.4 < SITE_CENTER[1] < 77.8
+    for frame in result["demo"]["telemetry"]:
+        assert distance_m(frame["lat"], frame["lon"], *SITE_CENTER) < 1000
+
+
+def test_frontend_map_centers_on_the_same_site():
+    from pathlib import Path
+
+    from data.generate import SITE_CENTER
+
+    site_js = Path(__file__).resolve().parents[3] / "frontend" / "src" / "lib" / "site.js"
+    assert f"SITE_CENTER = [{SITE_CENTER[0]}, {SITE_CENTER[1]}]" in site_js.read_text()
