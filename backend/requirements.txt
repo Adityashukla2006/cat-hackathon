@@ -14,3 +14,4 @@ lightgbm==4.5.0
 scikit-learn==1.6.0
 langgraph==1.2.12
 python-multipart==0.0.20
+pyyaml==6.0.3

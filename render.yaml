@@ -1,0 +1,25 @@
+# Render blueprint for the Shadow Shift backend. Secrets are set in the Render dashboard.
+services:
+  - type: web
+    name: shadow-shift-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    # generated data and trained models are not committed, so build them from seed 42
+    buildCommand: >-
+      pip install -r requirements.txt &&
+      python data/generate.py --seed 42 &&
+      python ml/train.py --seed 42
+    startCommand: >-
+      uvicorn app.main:app --host 0.0.0.0 --port $PORT
+      --proxy-headers --forwarded-allow-ips "*"
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.11
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: FRONTEND_ORIGIN
+        sync: false
